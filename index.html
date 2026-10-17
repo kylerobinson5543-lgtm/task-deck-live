@@ -1,0 +1,1609 @@
+<title>Task Deck V1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Caveat:wght@700&family=Figtree:wght@400;500;600&display=swap">
+<style>
+/* Task Deck V1. One phone-width column: header (title, Waiting on pile, clock), a demo switcher for whose phone you're on,
+   the private My day strip, the card stage, one-line quick add. The Waiting on sheet is a view of open assignments.
+   Card kinds: task = card, chore = octagon, moment = pillow. Outline = urgency only. */
+:root{
+  --bg:#13151b; --surface:#1d2029; --line:#2b2f3a; --text:#e9e7e2; --muted:#8c91a1;
+  --task-paper:#f4f1ea; --chore-paper:#e3ebdd; --moment-paper:#f6e3df;
+  --ink:#1c1e24; --ink-soft:#5b5f6b; --rule:#d6d1c5; --chip:rgba(28,30,36,.07);
+  --later:#e3a63b; --do:#43c283; --team:#9483f2; --agent:#3cb6cc; --slot-in:#0b2328; --urgent:#f0a43a; --pink:#e58aa6; --sun:#f3c25b; --busy:#3a3f4d;
+  --display:"Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --body:"Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --hand:"Caveat","Bradley Hand","Segoe Print",cursive;
+  color-scheme:dark;
+}
+[hidden]{display:none!important}
+html,body{height:100%;overflow-x:clip}
+body{background:var(--bg);color:var(--text);font-family:var(--body);font-size:15px;line-height:1.45;padding-inline:16px;-webkit-tap-highlight-color:transparent}
+.app{max-width:420px;margin:0 auto;padding-block:18px 40px;display:flex;flex-direction:column;gap:16px}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px}
+h1{font-family:var(--display);font-weight:800;font-size:26px;letter-spacing:-.02em;margin:0}
+.clock{font-size:13px;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums;line-height:1.25}
+.clock b{display:block;color:var(--text);font-size:15px;font-weight:600}
+.tabs{display:flex;gap:4px;background:var(--surface);padding:4px;border-radius:99px;align-self:flex-start}
+.tabs button{border:none;background:none;padding:6px 16px;color:var(--muted)}
+.tabs button[aria-pressed="true"]{background:var(--bg);color:var(--text);box-shadow:0 0 0 1px var(--line)}
+.tabs .n{font-variant-numeric:tabular-nums;color:var(--muted);font-weight:500;margin-left:4px}
+
+.team{display:flex;gap:4px;overflow-x:auto;padding-bottom:2px}
+.who{display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;padding:4px 2px;min-width:56px;color:var(--muted);font-size:11.5px;font-weight:500;border-radius:12px}
+.who .av{position:relative;width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:var(--surface);border:2px solid var(--line);color:var(--text);font-weight:600;font-size:13px}
+.who.home .av,.who.kid .av{border-style:dashed}
+.who .n{position:absolute;top:-5px;right:-7px;min-width:18px;height:18px;padding:0 4px;border-radius:9px;background:var(--surface);border:1px solid var(--line);font-size:10.5px;display:grid;place-items:center;font-variant-numeric:tabular-nums}
+.who[aria-pressed="true"]{color:var(--text)}
+.who[aria-pressed="true"] .av{border-color:var(--do);border-style:solid;box-shadow:0 0 0 3px rgba(67,194,131,.25)}
+
+.legend{display:grid;grid-template-columns:1fr 1fr;gap:5px 14px;font-size:12.5px;color:var(--muted)}
+.legend span{display:flex;align-items:center;gap:7px}
+.legend i{width:8px;height:8px;border-radius:50%;flex:none}
+.legend b{color:var(--text);font-weight:600}
+
+.stage{position:relative;height:480px;touch-action:none;user-select:none;-webkit-user-select:none}
+.edge{position:absolute;font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;transition:opacity .2s;pointer-events:none}
+.edge.l{left:-4px;top:50%;transform:translateY(-50%) rotate(-90deg);transform-origin:left center;margin-left:8px;color:var(--do)}
+.edge.r{right:-4px;top:50%;transform:translateY(-50%) rotate(90deg);transform-origin:right center;margin-right:8px;color:var(--later)}
+.stage.holding .edge,.stage.show-when .edge.r{opacity:.12}
+
+/* A card is a wrapper (moves, carries shadow + urgency outline) around a face (paper, shape, content). */
+.deck{position:absolute;inset:66px 18px 78px;perspective:900px}
+.card{position:absolute;inset:0;will-change:transform;cursor:grab;filter:drop-shadow(0 16px 22px rgba(0,0,0,.45))}
+.card.urgent{filter:drop-shadow(2.5px 0 0 var(--urgent)) drop-shadow(-2.5px 0 0 var(--urgent)) drop-shadow(0 2.5px 0 var(--urgent)) drop-shadow(0 -2.5px 0 var(--urgent)) drop-shadow(0 16px 22px rgba(0,0,0,.45))}
+.card.dragging{cursor:grabbing}
+.card.held .face{box-shadow:inset 0 0 0 3px var(--team)}
+.card.held.down .face{box-shadow:inset 0 0 0 3px var(--agent)}
+.face{position:absolute;inset:0;overflow:hidden;background:var(--paper);color:var(--ink);border-radius:20px;padding:20px 22px 18px;display:flex;flex-direction:column;gap:9px;--paper:var(--task-paper)}
+.card.chore .face{--paper:var(--chore-paper);border-radius:0;padding:15% 26px 13%}
+.card.moment .face{--paper:var(--moment-paper);border-radius:0;padding:28px 32px 26px}
+.band{margin:-20px -22px 2px;padding:7px 22px;font-size:12px;font-weight:600;letter-spacing:.04em;display:flex;align-items:center;gap:8px}
+.card.chore .band,.card.moment .band{margin:0;padding:0;background:none!important}
+.band.from{background:#e6e1f9;color:#3f348f}
+.band.done{background:#d6f1e3;color:#1d6b45}
+.band.back{background:#f7e6c4;color:#7a5410}
+.band.agent{background:#d3eef3;color:#155f6d}
+.band.moment{color:#9a3f5c}
+.band.deal{color:#1d6b45}
+.band b{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:9.5px;background:currentColor}
+.band b span{color:#fff}
+.meta{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft)}
+.tag{padding:3px 9px;border-radius:99px;border:1.5px solid currentColor}
+.mins{text-transform:none;letter-spacing:0;font-size:12.5px}
+.face h2{font-family:var(--display);font-weight:800;font-size:27px;line-height:1.08;letter-spacing:-.02em;margin:2px 0 0;text-wrap:balance}
+.card.moment h2{font-family:var(--hand);font-weight:700;font-size:36px;letter-spacing:0;line-height:1}
+.why{align-self:flex-start;font-size:12px;font-weight:600;padding:3px 9px;border-radius:8px;background:var(--chip);color:var(--ink)}
+.why.hot{background:#fbe3bd;color:#6b4407}
+.face p{margin:0;color:var(--ink-soft);font-size:14.5px}
+.mini{list-style:none;margin:0;padding:0;font-size:14px;display:grid;gap:2px}
+.mini li.x{color:var(--ink-soft);text-decoration:line-through}
+.mini .more{color:var(--ink-soft);font-size:13px}
+.next{margin-top:auto;border-top:1.5px dashed var(--rule);padding-top:10px;font-size:13px;color:var(--ink-soft);display:flex;justify-content:space-between;align-items:center;gap:8px;min-width:0}
+.next b{color:var(--ink)}
+.card.moment .next{border-top-color:rgba(154,63,92,.25)}
+.stamps{display:flex;flex-direction:row-reverse;flex:none}
+.stamps span{width:28px;height:28px;margin-left:-7px;border-radius:50%;display:grid;place-items:center;font-size:15px;background:var(--paper);border:2px dashed #c9a45e;transform:rotate(var(--r))}
+.stamp{position:absolute;top:30%;padding:6px 12px;border:3px solid;border-radius:10px;font-family:var(--display);font-weight:800;font-size:22px;letter-spacing:.04em;text-transform:uppercase;opacity:0;pointer-events:none;background:var(--paper)}
+.stamp.do{left:24px;color:var(--do);transform:rotate(-8deg)}
+.stamp.done{left:50%;font-size:34px;color:var(--do);transform:translateX(-50%) rotate(-6deg)}
+
+.picker,.dock{position:absolute;left:0;right:0;display:flex;justify-content:center;opacity:0;transition:opacity .2s,transform .25s;pointer-events:none}
+.picker{top:0;gap:2px;transform:translateY(-8px)}
+.dock{bottom:6px;flex-direction:column;align-items:center;gap:8px;transform:translateY(8px)}
+.stage.show-picker .picker,.stage.show-dock .dock{opacity:1;transform:none}
+.chip{display:flex;flex-direction:column;align-items:center;gap:4px;width:60px;font-size:11.5px;color:var(--muted);transition:transform .15s,color .15s}
+.chip .av{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;font-weight:600;font-size:14px;color:var(--text);background:var(--surface);border:2px solid var(--line);transition:background .15s,border-color .15s}
+.chip.home .av,.chip.kid .av{border-style:dashed}
+.chip.maker .av{box-shadow:0 0 0 3px rgba(227,166,59,.45)}
+.chip.on{transform:translateY(-4px) scale(1.12);color:var(--text)}
+.chip.on .av{background:var(--team);border-color:var(--team);color:#fff}
+.chip.catch{animation:catch .55s ease-out}
+@keyframes catch{0%{transform:translateY(-4px) scale(1.12)}30%{transform:translateY(-8px) scale(1.45)}60%{transform:translateY(-3px) scale(.96)}100%{transform:translateY(-4px) scale(1.12)}}
+.slot{width:74%;height:12px;border-radius:8px;background:var(--surface);box-shadow:inset 0 2px 4px rgba(0,0,0,.6),0 0 0 2px var(--line);transition:box-shadow .2s,background .2s}
+.slot.open{background:var(--slot-in);box-shadow:inset 0 2px 6px rgba(0,0,0,.8),0 0 0 2px var(--agent),0 0 24px rgba(60,182,204,.55)}
+.agent-label{display:flex;align-items:center;gap:8px;font-size:13px}
+.agent-label i{width:10px;height:10px;border-radius:50%;background:var(--agent)}
+.agent-label.working i{animation:work .7s ease-in-out infinite alternate}
+@keyframes work{to{box-shadow:0 0 0 6px rgba(60,182,204,.25);transform:scale(1.25)}}
+.hint{position:absolute;left:0;right:0;bottom:30px;text-align:center;font-size:12px;color:var(--muted);transition:opacity .2s,color .2s}
+.hint.flash{color:var(--team);font-weight:600}
+.stage.holding .hint,.stage.show-dock .hint,.stage.talking .hint{opacity:0}
+
+.whenlist{position:absolute;right:0;top:50%;transform:translate(10px,-50%);z-index:20;opacity:0;transition:opacity .2s,transform .25s;pointer-events:none;max-width:78%}
+.stage.show-when .whenlist{opacity:1;transform:translate(0,-50%)}
+.when{display:flex;align-items:center;gap:9px;padding:9px 14px 9px 10px;border-radius:12px;background:var(--surface);border:1.5px solid var(--later);font-size:13px;font-weight:600;color:var(--text);box-shadow:0 6px 16px rgba(0,0,0,.35)}
+.when small{display:block;color:var(--muted);font-weight:500;font-size:11.5px}
+.when .e{font-size:18px}
+.when.fit{border-color:var(--do)}
+.when.soft{border-color:var(--pink)}
+
+.voice{position:absolute;left:50%;bottom:40px;transform:translate(-50%,8px);z-index:35;width:max-content;max-width:calc(100% - 24px);padding:9px 16px;border-radius:99px;background:var(--text);color:var(--bg);font-size:13.5px;font-weight:600;text-align:center;opacity:0;transition:opacity .25s,transform .25s;pointer-events:none}
+.voice.show{opacity:1;transform:translate(-50%,0)}
+.nudge{position:absolute;left:10px;right:10px;bottom:10px;z-index:36;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:14px;display:grid;gap:10px;box-shadow:0 20px 50px rgba(0,0,0,.6);animation:sheetIn .28s cubic-bezier(.2,.9,.3,1.2)}
+@keyframes sheetIn{from{transform:translateY(20px);opacity:0}}
+.nudge .t{font-weight:600}
+.nudge .s{color:var(--muted);font-size:13px}
+.nudge .nb{display:flex;gap:8px;flex-wrap:wrap}
+.nudge .primary{background:var(--do);border-color:var(--do);color:#08301c}
+
+.empty{position:absolute;inset:0;border:2px dashed var(--line);border-radius:20px;display:grid;place-items:center;text-align:center;color:var(--muted);padding:20px}
+.empty b{display:block;font-family:var(--display);font-size:22px;color:var(--text);margin-bottom:6px}
+
+/* Quick add */
+.qa{display:flex;gap:8px}
+.qa input{flex:1;min-width:0;font:inherit;font-size:15px;padding:11px 14px;border-radius:14px;border:1.5px solid var(--line);background:var(--surface);color:var(--text)}
+.qa input::placeholder{color:var(--muted)}
+.qa input:focus{outline:none;border-color:var(--do)}
+.qa button{border-radius:14px;background:var(--do);color:#08301c;border-color:var(--do);padding:0 16px}
+.qprev{display:grid;grid-template-columns:104px 1fr;gap:12px;align-items:center;background:var(--surface);border-radius:16px;padding:12px}
+.mcard{position:relative;height:118px}
+.mcard .card{cursor:default;filter:drop-shadow(0 6px 10px rgba(0,0,0,.45))}
+.mcard .face{padding:10px 11px;gap:4px}
+.mcard .card.chore .face{padding:17% 12px}
+.mcard .card.moment .face{padding:14px 14px}
+.mcard .face h2{font-size:14px;line-height:1.1}
+.mcard .card.moment h2{font-size:19px}
+.mcard .meta{font-size:9.5px}
+.mcard .tag{padding:1px 6px;border-width:1px}
+.mcard .next{font-size:10px;padding-top:4px}
+.qchips{display:flex;flex-wrap:wrap;gap:6px}
+.qchips button{font-size:12.5px;padding:6px 10px;background:var(--bg)}
+.qchips button b{font-weight:500;color:var(--muted);margin-right:4px}
+.qhint{font-size:12px;color:var(--muted);grid-column:1/-1}
+
+/* Overlays */
+.overlay{position:absolute;inset:6px 4px;z-index:40;background:var(--task-paper);color:var(--ink);border-radius:22px;padding:18px 20px;display:flex;flex-direction:column;gap:10px;box-shadow:0 30px 70px rgba(0,0,0,.65);overflow:auto;animation:open .32s cubic-bezier(.2,.9,.3,1.15)}
+.overlay.chore{background:var(--chore-paper)}
+.overlay.moment{background:var(--moment-paper)}
+@keyframes open{from{transform:scale(.88);opacity:0}}
+.overlay h2{font-family:var(--display);font-weight:800;font-size:26px;line-height:1.1;margin:0;text-wrap:balance}
+.overlay.moment h2{font-family:var(--hand);font-size:36px;line-height:1}
+.overlay .sub{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft)}
+.overlay p{margin:0;color:var(--ink-soft)}
+.qp{border-radius:14px;background:rgba(255,255,255,.65);border:1px solid var(--rule);padding:12px;display:grid;gap:9px}
+.qph{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink)}
+.qlink{display:flex;align-items:center;justify-content:space-between;gap:10px;text-decoration:none;color:var(--ink);background:#fff;border:1.5px solid var(--do);border-radius:12px;padding:10px 12px;font-weight:600;font-size:14.5px}
+.qlink small{display:block;font-weight:500;color:var(--ink-soft);font-size:12px}
+.qlink:focus-visible{outline:2px solid var(--team);outline-offset:2px}
+.qready{display:flex;flex-wrap:wrap;gap:6px}
+.qready span{font-size:12.5px;padding:4px 9px;border-radius:99px;background:var(--chip);color:var(--ink)}
+.qtip{font-size:13.5px;color:var(--ink-soft);display:flex;gap:7px}
+.qagent{justify-self:start;background:#fff!important;color:var(--ink)!important;border:1.5px solid var(--agent)!important}
+.check{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.check button{all:unset;box-sizing:border-box;width:100%;display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;cursor:pointer;font-size:15px}
+.check button:hover{background:rgba(28,30,36,.06)}
+.check button:focus-visible{outline:2px solid var(--team)}
+.check .box{width:20px;height:20px;border-radius:6px;border:2px solid var(--ink-soft);display:grid;place-items:center;font-size:13px;flex:none}
+.check .x .box{background:var(--do);border-color:var(--do);color:#fff}
+.check .x .t{text-decoration:line-through;color:var(--ink-soft)}
+.add{display:flex;gap:8px}
+.add input{flex:1;min-width:0;font:inherit;font-size:15px;padding:9px 12px;border-radius:10px;border:1.5px solid var(--rule);background:#fff;color:var(--ink)}
+.actions{margin-top:auto;display:flex;flex-wrap:wrap;gap:8px;padding-top:8px}
+.actions button,.overlay .pbtn{background:#fff;color:var(--ink);border:1.5px solid var(--rule)}
+.actions .primary{background:var(--do);border-color:var(--do);color:#08301c}
+.actions .primary:disabled{opacity:.45;cursor:default}
+.actions .warn{background:#fff;border-color:var(--later);color:#7a5410}
+.actions .quiet{border-color:transparent;background:none;color:var(--ink-soft)}
+.cam{display:grid;place-items:center;gap:6px;border:2px dashed var(--ink-soft);border-radius:16px;min-height:180px;cursor:pointer;color:var(--ink-soft);font-weight:600;overflow:hidden;position:relative;background:rgba(28,30,36,.04)}
+.cam input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.cam img{width:100%;height:220px;object-fit:cover;display:block}
+.cam:focus-within{outline:2px solid var(--team);outline-offset:2px}
+.decide-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.decide-grid button{background:#fff;color:var(--ink);border:1.5px solid var(--rule);border-radius:14px;padding:12px;text-align:left;display:grid;gap:2px}
+.decide-grid button small{font-weight:500;color:var(--ink-soft)}
+.decide-grid .primary{background:var(--do);border-color:var(--do);color:#08301c}
+.decide-grid .primary small{color:#165b37}
+
+/* Toast */
+.toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,10px);background:var(--text);color:var(--bg);padding:9px 16px;border-radius:99px;font-weight:600;font-size:13.5px;opacity:0;transition:opacity .25s,transform .25s;pointer-events:none;z-index:60;max-width:calc(100% - 32px);text-align:center}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+
+/* Undo: a short-lived bar after every action */
+.undobar{position:fixed;left:50%;bottom:20px;z-index:55;transform:translate(-50%,16px);opacity:0;pointer-events:none;display:flex;align-items:center;gap:12px;
+  max-width:calc(100% - 32px);padding:8px 8px 8px 16px;border-radius:99px;background:var(--surface);border:1px solid var(--line);box-shadow:0 12px 30px rgba(0,0,0,.5);font-size:13.5px;transition:opacity .2s,transform .25s;overflow:hidden}
+.undobar.show{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+.undobar span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.undobar button{background:var(--text);color:var(--bg);border-color:var(--text);padding:6px 14px;flex:none}
+.undobar i{position:absolute;left:0;bottom:0;height:2px;background:var(--do);width:100%}
+.undobar.show i{animation:drain linear forwards;animation-duration:var(--t,6s)}
+@keyframes drain{to{width:0}}
+.toast{bottom:76px}
+/* Edit sheet (inside the workspace) */
+.editbtn{position:absolute;top:14px;right:14px;background:#fff!important;color:var(--ink)!important;border:1.5px solid var(--rule)!important;font-size:12.5px;padding:5px 11px}
+.ef{display:grid;gap:12px}
+.ef label{display:grid;gap:5px;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft)}
+.ef input,.ef textarea,.ef select{font:inherit;font-size:15px;text-transform:none;letter-spacing:0;font-weight:500;color:var(--ink);background:#fff;border:1.5px solid var(--rule);border-radius:10px;padding:9px 11px;min-width:0}
+.ef textarea{min-height:64px;resize:vertical}
+.ef input:focus,.ef textarea:focus,.ef select:focus{outline:none;border-color:var(--do)}
+.pills{display:flex;flex-wrap:wrap;gap:6px}
+.pills button{background:#fff;color:var(--ink);border:1.5px solid var(--rule);font-size:13px;padding:5px 11px;text-transform:none;letter-spacing:0}
+.pills button[aria-pressed="true"]{background:var(--ink);color:#fff;border-color:var(--ink)}
+.ef .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+/* Waiting on: a small fanned pile in the header; tap to spread the cards */
+.waitpile{display:flex;align-items:center;gap:9px;background:none!important;border:none!important;padding:4px 2px!important;color:var(--muted);font-size:12.5px;font-weight:600;margin-left:auto}
+.waitpile .fan{position:relative;width:34px;height:30px}
+.waitpile .fan i{position:absolute;left:8px;top:2px;width:18px;height:24px;border-radius:4px;background:var(--task-paper);box-shadow:0 2px 4px rgba(0,0,0,.4);transform-origin:50% 90%}
+.waitpile .fan i:nth-child(1){transform:rotate(-16deg);opacity:.75}
+.waitpile .fan i:nth-child(2){transform:rotate(-2deg);opacity:.9}
+.waitpile .fan i:nth-child(3){transform:rotate(13deg)}
+.waitpile .fan i.agent{background:#d3eef3}
+.waitpile b{display:block;color:var(--text);font-size:15px;font-variant-numeric:tabular-nums}
+.waitpile.none .fan i{background:var(--surface);box-shadow:inset 0 0 0 1.5px var(--line)}
+.waitpile.none b{color:var(--muted)}
+.scrim{position:fixed;inset:0;background:rgba(8,9,12,.62);z-index:50;animation:fadeIn .2s}
+@keyframes fadeIn{from{opacity:0}}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:51;max-width:452px;margin:0 auto;max-height:84vh;overflow:auto;background:var(--bg);border:1px solid var(--line);border-bottom:none;border-radius:22px 22px 0 0;padding:10px 16px 26px;animation:sheetUp .3s cubic-bezier(.2,.9,.3,1.15)}
+@keyframes sheetUp{from{transform:translateY(40px);opacity:0}}
+.sheet .grab{width:40px;height:4px;border-radius:2px;background:var(--line);margin:0 auto 12px}
+.sheet h3{font-family:var(--display);font-weight:800;font-size:22px;margin:0}
+.sheet .sub{font-size:13px;color:var(--muted);margin:2px 0 14px}
+.wlist{display:grid;gap:12px}
+.wcard{position:relative;background:var(--task-paper);color:var(--ink);border-radius:16px;padding:12px 14px;display:grid;gap:6px;box-shadow:0 10px 22px rgba(0,0,0,.4);animation:dealIn .38s cubic-bezier(.2,.9,.3,1.25) both}
+.wcard.chore{background:var(--chore-paper);clip-path:polygon(14px 0,calc(100% - 14px) 0,100% 14px,100% calc(100% - 14px),calc(100% - 14px) 100%,14px 100%,0 calc(100% - 14px),0 14px)}
+@keyframes dealIn{from{transform:translateY(-26px) rotate(-3deg);opacity:0}}
+.wcard .wtop{display:flex;justify-content:space-between;gap:8px;font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-soft)}
+.wcard b{font-family:var(--display);font-weight:800;font-size:19px;line-height:1.15}
+.wstate{justify-self:start;font-size:12.5px;font-weight:600;padding:3px 9px;border-radius:8px;background:var(--chip)}
+.wstate.not_sent{background:#d3eef3;color:#155f6d}
+.wstate.seen{background:#e6e1f9;color:#3f348f}
+.wstate.needs_info{background:#fbe3bd;color:#6b4407}
+.wact{display:flex;gap:6px;flex-wrap:wrap;margin-top:2px}
+.wact button{background:#fff;color:var(--ink);border:1.5px solid var(--rule);font-size:12.5px;padding:6px 12px}
+.wact button.warn{border-color:var(--later);color:#7a5410}
+.wact button:disabled{opacity:.45;cursor:default}
+.wempty{color:var(--muted);font-size:14px;padding:18px 4px;text-align:center}
+.band.review{background:#d6f1e3;color:#1d6b45}
+.band.parked{background:#d3eef3;color:#155f6d}
+/* Cloud connection (Grok Bot) */
+.cloudbtn{display:flex;align-items:center;gap:6px;padding:5px 10px!important;font-size:15px;line-height:1}
+.cloudbtn i{width:8px;height:8px;border-radius:50%;background:var(--line);flex:none}
+.cloudbtn.on i{background:var(--agent);box-shadow:0 0 8px rgba(60,182,204,.75)}
+.cform{display:grid;gap:10px}
+.cform input{font:inherit;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--text)}
+.cform input:focus-visible{outline:2px solid var(--agent);outline-offset:1px}
+.cerr{color:var(--urgent);font-size:13px}
+.cstat{font-size:14px;color:var(--muted);margin:4px 0 14px;line-height:1.4}
+.cstat b{color:var(--text)}
+.sheet .actions{margin-top:4px}
+.checks{list-style:none;margin:0;padding:0;display:grid;gap:3px;font-size:13.5px;font-weight:600}
+.checks .ok{color:#1d6b45}
+.checks .bad{color:#9a3f2c}
+.wstate.sent{background:#d3eef3;color:#155f6d}
+.wstate.delivery_failed{background:#fbe3bd;color:#6b4407}
+
+/* My day (private) */
+.myday{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:10px 14px}
+.myday summary{list-style:none;cursor:pointer;display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:13.5px}
+.myday summary::-webkit-details-marker{display:none}
+.myday summary .mlock{margin-left:auto;font-size:11.5px;color:var(--muted)}
+.myday .m{display:flex;align-items:center;gap:5px;color:var(--muted)}
+.myday .m b{color:var(--text);font-variant-numeric:tabular-nums}
+.myday .risk{margin-top:8px;font-size:12.5px;color:var(--later)}
+.myday .wkbars{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;align-items:end;height:72px;margin-top:12px}
+.myday .wkbars div{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;color:var(--muted);height:100%;justify-content:flex-end}
+.myday .wkbars i{display:block;width:70%;border-radius:4px 4px 2px 2px;background:var(--do);min-height:3px}
+.myday .wkbars .clean i{box-shadow:0 0 0 2px var(--sun)}
+.myday .recap{font-size:12.5px;color:var(--muted);margin-top:8px}
+.burst{position:absolute;left:50%;top:45%;z-index:45;pointer-events:none;font-size:24px}
+.burst span{position:absolute;animation:burst 1.1s cubic-bezier(.15,.7,.3,1) forwards}
+@keyframes burst{from{transform:translate(0,0) scale(.4);opacity:1}to{transform:translate(var(--x),var(--y)) scale(1) rotate(var(--r));opacity:0}}
+@media (prefers-reduced-motion:reduce){.dcard{transition:none!important}.burst{display:none}}
+
+.bar{display:flex;flex-wrap:wrap;gap:8px}
+.bar .lbl{width:100%;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.log h3{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:0 0 8px;font-weight:600}
+.log ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.log li{display:flex;align-items:center;gap:10px;background:var(--surface);border-radius:12px;padding:10px 12px;font-size:14px;min-width:0}
+.log li i{width:8px;height:8px;border-radius:50%;flex:none}
+.log li span{min-width:0;overflow-wrap:anywhere}
+.log li em{font-style:normal;color:var(--muted);margin-left:auto;font-size:12px;white-space:nowrap}
+.log .none{color:var(--muted);font-size:13px;background:none;padding:0}
+button{font:inherit;font-size:13px;font-weight:600;color:var(--text);background:var(--surface);border:1px solid var(--line);border-radius:99px;padding:7px 14px;cursor:pointer}
+button:focus-visible,.mc:focus-visible,.wrow:focus-visible{outline:2px solid var(--team);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){.overlay,.nudge{animation:none}}
+</style>
+
+<div class="app">
+  <header>
+    <h1>Task Deck</h1>
+    <button type="button" class="waitpile" id="waitBtn" aria-haspopup="dialog"></button>
+    <button type="button" class="cloudbtn" id="cloudBtn" aria-haspopup="dialog" aria-label="Grok Bot connection"><i></i>🤖</button>
+    <div class="clock" id="clock"></div>
+  </header>
+  <div class="team" id="team" aria-label="Demo: whose phone you're looking at"></div>
+
+  <section id="deckView" style="display:flex;flex-direction:column;gap:14px">
+    <details class="myday" id="myday"></details>
+    <div class="legend">
+      <span><i style="background:var(--do)"></i><b>Swipe left</b>&nbsp;Do it</span>
+      <span><i style="background:var(--later)"></i><b>Swipe right</b>&nbsp;Not now</span>
+      <span><i style="background:var(--team)"></i><b>Swipe up</b>&nbsp;Hand off</span>
+      <span><i style="background:var(--agent)"></i><b>Swipe down</b>&nbsp;Agent</span>
+    </div>
+    <div class="stage" id="stage">
+      <div class="picker" id="picker"></div>
+      <span class="edge l">Do it</span>
+      <span class="edge r">Not now</span>
+      <div class="deck" id="deck"></div>
+      <div class="whenlist" id="whenlist"></div>
+      <div class="hint" id="hint">Swipe right and the app finds a time</div>
+      <div class="voice" id="voice" role="status" aria-live="polite"></div>
+      <div class="dock"><div class="slot" id="slot"></div><div class="agent-label" id="agentLabel"><i></i>Grok Bot</div></div>
+      <div class="nudge" id="nudge" hidden>
+        <div><div class="t" id="nudgeT"></div><div class="s" id="nudgeS"></div></div>
+        <div class="nb"><button type="button" class="primary" id="nDo">Do it now</button><button type="button" id="nLater">Later anyway</button></div>
+      </div>
+      <div class="overlay" id="overlay" hidden></div>
+    </div>
+    <form class="qa" id="qa" autocomplete="off">
+      <input id="qaIn" aria-label="Add a card in one line" placeholder="Add a card…">
+      <button type="submit">Add</button>
+    </form>
+    <div class="qprev" id="qprev" hidden></div>
+  </section>
+
+  <div class="bar">
+    <span class="lbl">Demo controls</span>
+    <button type="button" id="skipHour">Skip ahead an hour</button>
+    <button type="button" id="skipDay">Skip to tomorrow</button>
+    <button type="button" id="reset">Start over</button>
+  </div>
+
+  <section class="log">
+    <h3>Family activity</h3>
+    <ul id="log"></ul>
+  </section>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="undobar" id="undoBar" role="status" aria-live="polite"><span id="undoTxt"></span><button type="button" id="undoBtn">Undo</button><i></i></div>
+<div id="waitLayer" hidden><div class="scrim" id="waitScrim"></div><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="waitH" id="waitSheet"></div></div>
+<div id="cloudLayer" hidden><div class="scrim" id="cloudScrim"></div><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="cloudH" id="cloudSheet"></div></div>
+
+<script>
+const STORE='taskdeck.v1';
+// AI agents. Grok Bot is Kyle's execution agent (Stage 1: connected when signed in; only the handshake
+// probe is wired to it). Nobody else's agent is connected: swiping down parks the card, clearly unsent.
+const AGENTS={Kyle:'Grok Bot'},agentOf=n=>AGENTS[n]||'your assistant';
+const PEOPLE=[{n:'Kyle',i:'K',g:'me'},{n:'Ashley',i:'As',g:'home'},{n:'Myla',i:'My',g:'kid'},{n:'Kuhlly',i:'Ku',g:'kid'},{n:'Shelie',i:'Sh',g:'home'},{n:'Cindy',i:'Ci',g:'home'}];
+const KIDS=['Myla','Kuhlly'],PARENTS=['Kyle','Ashley'];
+const person=n=>PEOPLE.find(p=>p.n===n)||{n,i:n.slice(0,2),g:'agent'};
+const PH={5:['🌅','Bright and early'],6:['🌄','At the crack of dawn'],7:['☕','With my morning coffee'],8:['💼','Before the workday begins'],
+  9:['🏢','First thing at work'],10:['🎯','Mid-morning mission'],11:['🔔','Before the lunch bell'],12:['🌮','Lunch o’clock'],
+  13:['🍽️','Right after lunch'],14:['🌤️','Early afternoon'],15:['🍩','Afternoon pick-me-up'],16:['🏃','The afternoon home stretch'],
+  17:['🏁','When the whistle blows'],18:['🍲','Around the dinner table'],19:['🧽','After the dinner dishes'],20:['🛋️','When the evening settles in'],
+  21:['🤫','Once the house gets quiet'],22:['🛏️','Before hitting the hay']};
+const PH_WEEKEND={8:['🥞','Slow weekend breakfast'],9:['🧺','Weekend morning chores'],17:['🌇','Late-afternoon wind-down']};
+
+/* ---------- Clock. Saved state keeps its own day zero so dates stay put across visits. ---------- */
+const DAY=1440,WAKE=5*60,SLEEP=22*60,DECIDE_AT=3,DEAL_AT=930,CAP=4;
+let BASE=new Date();BASE.setHours(0,0,0,0);
+let now=0;
+const nowDay=()=>Math.floor(now/DAY),tod=()=>((now%DAY)+DAY)%DAY;
+const dateOf=d=>{const x=new Date(BASE);x.setDate(x.getDate()+d);return x};
+const dayOfDate=dt=>Math.round((new Date(dt.getFullYear(),dt.getMonth(),dt.getDate())-BASE)/864e5);
+const dow=d=>dateOf(d).getDay();
+const isWeekend=d=>[0,6].includes(dow(d));
+const dayName=d=>dateOf(d).toLocaleDateString([],{weekday:'long'});
+const shortDay=d=>dateOf(d).toLocaleDateString([],{weekday:'short'});
+const fmt=m=>{m=((m%DAY)+DAY)%DAY;const h=Math.floor(m/60),mm=m%60;return `${(h%12)||12}:${String(mm).padStart(2,'0')} ${h<12?'AM':'PM'}`};
+const fmtShort=m=>{const h=Math.floor(m/60),mm=m%60;return `${(h%12)||12}${mm?':'+String(mm).padStart(2,'0'):''}${h<12?'a':'p'}`};
+const phrase=(d,h)=>{h=Math.min(22,Math.max(5,h));return(isWeekend(d)&&PH_WEEKEND[h])||PH[h]};
+const realNow=()=>Math.floor((Date.now()-BASE.getTime())/60000);
+
+/* ---------- Schedules (sample calendars) ---------- */
+const SCHED={
+  Ashley:{wd:[[480,930,'Work'],[945,975,'School pickup'],[1110,1155,'Family dinner']],we:[[600,660,'Yoga'],[1110,1155,'Family dinner']]},
+  Myla:{wd:[[465,915,'School'],[1110,1155,'Family dinner']],we:[[1110,1155,'Family dinner']]},
+  Kuhlly:{wd:[[465,915,'School'],[1110,1155,'Family dinner']],we:[[540,630,'Game'],[1110,1155,'Family dinner']]},
+  Shelie:{wd:[[600,690,'Book club'],[960,1020,'Evening walk']],we:[[540,630,'Farmers market']]},
+  Cindy:{wd:[[540,720,'Volunteering']],we:[[720,780,'Lunch with friends']]}};
+// Kyle's sample days are full on purpose (an advisor's day), so the narrow open pockets show
+const KA=[[330,375,'Gym'],[405,435,'Breakfast with the kids'],[450,480,'School drop-off'],[510,540,'Team huddle'],[540,600,'Client review'],[615,645,'Prospect call'],[660,690,'Paperwork block'],[705,750,'Lunch with Ashley'],[765,810,'Client review'],[825,855,'Office check-in'],[870,930,'Client meeting'],[945,975,'Pick up Kuhlly'],[990,1020,'Drive home'],[1035,1080,'Kuhlly’s practice'],[1095,1140,'Family dinner'],[1170,1200,'Homework help'],[1230,1260,'Bedtime routine']];
+const KB=[[330,375,'Gym'],[420,480,'Breakfast and drop-off'],[510,570,'Client review'],[600,660,'Planning session'],[690,735,'Lunch'],[780,870,'Client meetings'],[900,930,'Calls'],[960,990,'School pickup'],[1050,1110,'Myla’s volleyball'],[1110,1155,'Family dinner'],[1200,1230,'Bedtime routine']];
+const KC=[[480,540,'Pancake breakfast'],[540,630,'Boys’ game'],[720,780,'Errands'],[900,960,'Yard work'],[1080,1140,'Family dinner'],[1230,1260,'Bedtime routine']];
+const kyleDay=d=>isWeekend(d)?KC:(((d%2)+2)%2?KB:KA);
+let extras=[]; // one-off calendar events: {n,day,s,e,t,away}
+const events=(n,d)=>(n==='Kyle'?kyleDay(d):((SCHED[n]||{})[isWeekend(d)?'we':'wd']||[])).map(([s,e,t])=>({s,e,t}))
+  .concat(extras.filter(x=>x.n===n&&x.day===d).map(x=>({s:x.s,e:x.e,t:x.t,away:x.away}))).sort((a,b)=>a.s-b.s);
+const RULES={anytime:{lbl:'Anytime',from:WAKE,to:SLEEP},business:{lbl:'Business hours',from:540,to:1020,weekdays:true},errand:{lbl:'Store hours',from:480,to:1200},daylight:{lbl:'Daylight',from:480,to:1110}};
+function guessRule(t){t=t.toLowerCase();
+  if(/\b(rake|mow|leaves|yard|garden|shovel|wash the car)\b/.test(t))return'daylight';
+  if(/\b(call|book|dentist|doctor|appointment|bank|insurance|schedule)\b/.test(t))return'business';
+  if(/\b(pick up|return|drop off|buy|store|errand|dry cleaning)\b/.test(t))return'errand';return'anytime'}
+function guessMins(t){t=t.toLowerCase();
+  const R=[[/renew|pay|send|text|email|sign|trash|counters|set the table|feed/,5],[/call|book|review|order|unload|dishwasher|clear|wipe|pick up the|filter/,10],[/pick up|return|drop|sweep|fold|laundry|vacuum/,20],[/plan|clean|organize|fix|mow|rake/,30],[/compare|research|write/,45]];
+  for(const[r,m]of R)if(r.test(t))return m;return 15}
+
+/* ---------- Repeats in plain words ---------- */
+const DOW_NAMES=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+function occursOn(rep,d){
+  if(!rep||d<rep.start)return false;
+  if(rep.type==='weekly'){
+    if(!rep.days.includes(dow(d)))return false;
+    return (rep.interval||1)===1||Math.floor((d-rep.start)/7)%rep.interval===0;
+  }
+  if(rep.type==='monthly'){
+    const dt=dateOf(d),s=dateOf(rep.start);
+    if(dt.getDate()!==Math.min(rep.dom,new Date(dt.getFullYear(),dt.getMonth()+1,0).getDate()))return false;
+    const months=(dt.getFullYear()-s.getFullYear())*12+dt.getMonth()-s.getMonth();
+    return months%(rep.interval||1)===0;
+  }
+  return false;
+}
+function nextOcc(rep,from){for(let d=from;d<from+400;d++)if(occursOn(rep,d))return d;return null}
+function repLabel(rep){
+  if(!rep)return'';
+  const at=rep.at!=null?` · ${timeWord(rep.at)}`:'';
+  if(rep.type==='monthly'){const n=rep.dom,suf=n%10===1&&n!==11?'st':n%10===2&&n!==12?'nd':n%10===3&&n!==13?'rd':'th';
+    return(rep.interval>1?`Every ${rep.interval} months on the ${n}${suf}`:`The ${n}${suf} of every month`)+at}
+  const ds=rep.days.slice().sort((a,b)=>a-b),k=ds.join();
+  let base=k==='0,1,2,3,4,5,6'?'Every day':k==='1,2,3,4,5'?'Weekdays':k==='0,6'?'Weekends':(rep.interval>1?'Every other ':'Every ')+ds.map(x=>DOW_NAMES[x]).join(' & ');
+  return base+at;
+}
+function timeWord(m){return m<720?'morning':m<900?'midday':m<1020?'after school':m<1260?'evening':'night'}
+
+/* ---------- Quick paths ---------- */
+const QP={
+  registration:{links:[
+      {label:'Renew online',note:'Michigan Secretary of State · Quick Renewal',url:'https://dsvsesvc.sos.state.mi.us/TAP/?Link=VehicleRenewal'},
+      {label:'Find a self-service station',note:'Prints your tab on the spot · $4.25 fee',url:'https://miselfservicestation.com/'}],
+    ready:['Plate number','Last 4 of the VIN','Proof of no-fault insurance','Card or bank account'],
+    tips:['Tabs usually expire on your birthday. You can renew up to 6 months early.','Renewing after it expires adds a $10 late fee.']},
+  grocery:{agent:'build the cart',tips:['Check the lunch snacks before you send it. Kuhlly will notice if you don’t.']},
+  drycleaning:{tips:['Ticket is in the car cup holder.']},
+  dentist:{ready:['Insurance card','Both boys’ birthdays'],tips:['Ask for back-to-back slots so both boys go the same day.','Add the dentist’s number once and it shows up here every time.']},
+  dinner:{tips:['Taco night is quick, and everybody builds their own.']},
+  spark:{agent:'research and summarize',tips:['Ask for price, memory, and which local models each one can run.']},
+  cindy:{tips:['Book for the whole crew. Ask for a booth if the little ones are coming.']},
+  library:{tips:['If returning today isn’t happening, most libraries let you renew online with your card number.']},
+  photos:{tips:['Share the whole album as one link so everyone can add theirs.']},
+  leaves:{tips:['Bag them by the curb. Kuhlly might trade it for screen time.']},
+  filter:{tips:['Write the size on the furnace with a marker so the next one is a quick buy.']}
+};
+function errandTip(c,n){
+  if(c.rule!=='errand')return null;
+  const e=events(n,nowDay()).find(e=>e.s>tod()&&/pick|game|market|lunch/i.test(e.t));
+  return e?`Swing by on the way to “${e.t}” at ${fmt(e.s)}.`:null;
+}
+
+/* ---------- State ---------- */
+let seq=0,cards=[],archive=[],log=[],viewer='Kyle',busy=false,others=[],chips=[],stats={};
+let pool=[],ledger=[],out={},dealt={},hist={},share={Myla:.5,Kuhlly:.5};
+let dayLog={},goalI=0; // dayLog: 'clean' | 'miss' | 'skip' | 'out' per person per day, for forgiving streaks
+const fresh=new Set();
+/* ---------- Cards: lightweight model ----------
+   id: stable UUID · status: open | snoozed | assigned | done | dropped (finished cards move to `archive`, never hard-deleted)
+   asg: assignment history [{id, to, kind: person|agent, state, at, by}], the last one is current
+   version + updatedAt: basic change tracking · src: where the card came from */
+const uid=()=>{try{return crypto.randomUUID()}catch(e){return 'id-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10)}};
+const touch=c=>{c.version=(c.version||0)+1;c.updatedAt=now};
+const WAIT_STATES=['not_sent','sent','seen','needs_info','delivery_failed']; // still with the assignee (or parked / failed to deliver)
+const curAsg=c=>(c.asg&&c.asg.length?c.asg[c.asg.length-1]:null);
+const openAsg=c=>{const a=curAsg(c);return a&&[...WAIT_STATES,'returned'].includes(a.state)?a:null};
+const isReturned=c=>{const a=curAsg(c);return!!a&&a.state==='returned'&&c.holder===a.by};
+// Waiting on = a view of open assignments this person sent. No copies: it reads the cards themselves.
+const waitingFor=n=>cards.filter(c=>c.kind!=='moment'&&(c.asg||[]).some(a=>a.by===n&&WAIT_STATES.includes(a.state))&&c.holder!==n);
+const asgTo=(c,n)=>(c.asg||[]).filter(a=>a.to===n&&WAIT_STATES.includes(a.state)).at(-1); // the open request addressed to n
+const myAsg=(c,n)=>(c.asg||[]).filter(a=>a.by===n&&WAIT_STATES.includes(a.state)).at(-1);
+function assignTo(c,to,kind,state,by){const a={id:uid(),to,kind,state,at:now,by:by||viewer};(c.asg=c.asg||[]).push(a);c.status='assigned';touch(c);return a}
+function setState(a,state){a.state=state;a.updated=now}
+function archiveCard(c,status){const i=cards.indexOf(c);if(i>=0)cards.splice(i,1);c.status=status;touch(c);archive.unshift(c);if(archive.length>300)archive.length=300}
+const mk=o=>{const c={id:uid(),status:'open',asg:[],version:1,updatedAt:now,src:'app',kind:'task',type:'task',tag:'',note:'',next:'',items:null,stamps:[],slot:null,sentBack:null,doneBy:null,via:null,due:null,born:now,handedAt:null,nudged:false,repeat:null,proof:false,qp:null,dealt:null,poolId:null,group:null,review:false,nudge:null,...o};
+  if(c.mins==null)c.mins=guessMins(c.t);if(!c.rule)c.rule=guessRule(c.t);return c};
+const list=a=>a.map(t=>({t,done:false}));
+function seed(){
+  BASE=new Date();BASE.setHours(0,0,0,0);
+  const r=new Date();now=Math.min(1200,Math.max(420,Math.floor((r.getHours()*60+r.getMinutes())/15)*15));
+  seq=0;log=[];stats={};ledger=[];out={};dealt={};hist={};share={Myla:.5,Kuhlly:.5};fresh.clear();
+  const D=k=>nowDay()+k,ago=k=>now-k*DAY;
+  extras=[{n:'Myla',day:D(1),s:1080,e:1439,t:'Sleepover at Emma’s',away:true}];
+  archive=[];
+  const W=(days,at)=>({type:'weekly',days,interval:1,at,start:D(0)});
+  pool=[
+    {id:'sweep',t:'Sweep the kitchen floor',mins:15,rep:W([0,1,2,3,4,5,6])},
+    {id:'dish',t:'Unload the dishwasher',mins:10,rep:W([0,1,2,3,4,5,6])},
+    {id:'counters',t:'Wipe down the counters',mins:5,rep:W([0,1,2,3,4,5,6])},
+    {id:'set',t:'Set the table',mins:5,rep:W([0,1,2,3,4,5,6])},
+    {id:'clear',t:'Clear the table',mins:10,rep:W([0,1,2,3,4,5,6])},
+    {id:'trash',t:'Take out the trash',mins:5,rep:W([1,4])},
+    {id:'laundry',t:'Fold your laundry',mins:20,rep:W([0,3])},
+    {id:'sink',t:'Wipe the bathroom sink',mins:10,rep:W([2,6])},
+    {id:'living',t:'Pick up the living room',mins:10,rep:W([5])}];
+  const sat=nextOcc(W([6],600),D(1)),first=(()=>{for(let d=D(1);d<D(40);d++)if(dateOf(d).getDate()===1)return d})();
+  cards=[
+    mk({t:'Pick up dry cleaning',tag:'Errand',maker:'Ashley',holder:'Kyle',note:'Her blue dress and your two suits.',next:'Stop on the way',due:D(2),born:ago(2),handedAt:ago(2),qp:'drycleaning',status:'assigned',
+      asg:[{id:uid(),to:'Kyle',kind:'person',state:'seen',at:ago(2),by:'Ashley'}]}),
+    mk({t:'Book Kuhlly’s haircut',tag:'Family',maker:'Kyle',holder:'Kyle',note:'Booked Saturday at 10 with Jess at Great Clips.',born:ago(3),handedAt:ago(1),doneBy:'Ashley',status:'assigned',
+      asg:[{id:uid(),to:'Ashley',kind:'person',state:'returned',at:ago(1),by:'Kyle'}]}),
+    mk({t:'Renew car registration',tag:'Home',maker:'Kyle',holder:'Kyle',note:'Online renewal takes about 5 minutes.',next:'Open the renewal page',due:D(0),stamps:['🍩'],born:ago(3),qp:'registration'}),
+    mk({t:'Review grocery list',tag:'Home',maker:'Kyle',holder:'Kyle',note:'Add anything we’re missing.',due:D(1),qp:'grocery',
+      items:list(['Milk','Eggs','Bread','Bananas','Coffee','Chicken thighs','Tortillas','Granola bars'])}),
+    mk({t:'Ashley: movie night tonight? 🍿',kind:'moment',maker:'Ashley',holder:'Kyle',note:'Your pick this time.',mins:0}),
+    mk({t:'Rake the leaves',kind:'chore',tag:'Chore',maker:'Kyle',holder:'Kyle',mins:30,qp:'leaves',repeat:{type:'weekly',days:[6],interval:1,at:600,start:D(0)},slot:{day:sat,start:600}}),
+    mk({t:'Change the furnace filter',kind:'chore',tag:'Chore',maker:'Kyle',holder:'Kyle',mins:10,qp:'filter',repeat:{type:'monthly',dom:1,interval:1,at:1170,start:D(0)},slot:{day:first,start:1170}}),
+    mk({t:'Book the boys’ dentist cleanings',tag:'Family',maker:'Kyle',holder:'Kyle',note:'Both due for six-month cleanings.',next:'Call the dental office',due:D(6),stamps:['📆','🌮','🔄'],born:ago(6),qp:'dentist'}),
+    mk({t:'Plan Saturday family dinner',tag:'Family',maker:'Kyle',holder:'Kyle',note:'Something the kids will actually eat.',next:'Pick the menu',due:D(1),qp:'dinner'}),
+    mk({t:'Compare RTX Spark vs DGX Spark',tag:'NEXUS',maker:'Kyle',holder:'Kyle',note:'Price, memory, and what runs locally.',next:'Research and summarize',born:ago(2),qp:'spark'}),
+    mk({t:'Kyle’s fishing for a compliment 😏',kind:'moment',maker:'Kyle',holder:'Ashley',note:'Deliver in person when you get home.',mins:0}),
+    mk({t:'Return library books',tag:'Errand',maker:'Ashley',holder:'Ashley',next:'Drop at the front desk',due:D(-1),qp:'library'}),
+    mk({t:'Plan Cindy’s birthday dinner',tag:'Family',maker:'Ashley',holder:'Ashley',note:'Pick a restaurant and a time.',due:D(14),qp:'cindy',
+      items:list(['Pick 3 restaurants','Check Cindy’s schedule','Make the reservation'])}),
+    mk({t:'Send photos from the lake trip',tag:'Family',maker:'Kyle',holder:'Shelie',next:'Share the album',qp:'photos',handedAt:ago(1),status:'assigned',
+      asg:[{id:uid(),to:'Shelie',kind:'person',state:'sent',at:ago(1),by:'Kyle'}]}),
+    mk({t:'Pick up Malia’s prescription',tag:'Errand',maker:'Kyle',holder:'Ashley',next:'On the way home',due:D(0),born:ago(0),handedAt:now-180,status:'assigned',
+      asg:[{id:uid(),to:'Ashley',kind:'person',state:'seen',at:now-180,by:'Kyle'}]})];
+  hist[D(-1)]={sweep:'Kuhlly',dish:'Myla',counters:'Kuhlly',set:'Myla',clear:'Myla',living:'Kuhlly'};
+  // Two weeks of sample history so the scoreboard, streaks and fairness record have something to show
+  ledger=[];dayLog={};
+  for(let k=1;k<=13;k++){const d=D(-k),we=isWeekend(d);
+    [['Myla',[k%9,(k+2)%9,(k+5)%9]],['Kuhlly',[(k+1)%9,(k+4)%9]]].forEach(([who,ix])=>{
+      const miss=(who==='Myla'&&k===9)||(who==='Kuhlly'&&(k===2||k===6));
+      ix.slice(0,miss?1:ix.length).forEach(i=>ledger.push({who,t:pool[i].t,mins:pool[i].mins,day:d,ok:true}));
+      dayLog[who+'@'+d]=miss?(we?'skip':'miss'):'clean'});
+    if(k<=5)dayLog['Kyle@'+d]='clean';if(k<=3)dayLog['Ashley@'+d]='clean';
+    if(k<=6)stats['Kyle@'+d]={done:[4,6,3,5,7,2][k-1],handed:[1,0,2,1,0,1][k-1],ahead:0};
+  }
+  ledger=ledger.filter(l=>l.day!==D(-1));
+  ledger.push(...[['Kuhlly','sweep'],['Myla','dish'],['Kuhlly','counters'],['Myla','set'],['Myla','clear']].map(([who,id])=>{const p=pool.find(x=>x.id===id);return{who,t:p.t,mins:p.mins,day:D(-1),ok:true}}));
+  goalI=0;viewer='Kyle';
+}
+
+/* ---------- Saving: everything stays on this phone between visits ---------- */
+function save(){try{localStorage.setItem(STORE,JSON.stringify({base:BASE.getTime(),now,seq,cards,archive:archive.slice(0,300),log:log.slice(0,40),stats,pool,ledger,out,dealt,hist,share,extras,viewer,dayLog,goalI}))}catch(e){}}
+function load(){
+  try{
+    const s=JSON.parse(localStorage.getItem(STORE)||'null');if(!s||!s.cards)return false;
+    BASE=new Date(s.base);({seq,cards,log,stats,pool,ledger,out,dealt,hist,share,extras,viewer}=s);
+    archive=s.archive||[];dayLog=s.dayLog||{};goalI=s.goalI||0;
+    now=Math.max(s.now,realNow());
+    closeDays(Math.floor(s.now/DAY),nowDay());
+    return true;
+  }catch(e){return false}
+}
+
+/* ---------- Priority and urgency ---------- */
+const waitedDays=c=>c.handedAt!=null?Math.floor((now-c.handedAt)/DAY):0;
+function isUrgent(c){
+  if(c.kind==='moment'||c.type==='return'||c.dealt!=null||isReturned(c))return false;
+  if(c.due!=null&&c.due<nowDay())return true;
+  if(c.due!=null&&c.due===nowDay()&&tod()>=720)return true;
+  return c.maker!==c.holder&&!c.sentBack&&waitedDays(c)>=2;
+}
+function why(c,n){
+  if(c.kind==='moment')return{score:4,reason:''};
+  let s=0;const r=[];
+  if(c.dealt!=null){s+=6}
+  if(c.probe){s+=20;if(!isReturned(c))r.push([20,`Stage 1 test · swipe down to send it to ${CLOUD.agent}`])} // the test card stays on top
+  if(isReturned(c)){const a=curAsg(c);s+=8;r.push([8,`${a.to} finished this · your review`])}
+  else if(c.type==='return'){s+=8;r.push([8,`${c.doneBy} wants a thumbs-up`])}
+  else if(c.sentBack){s+=6;r.push([6,`${c.sentBack} sent this back`])}
+  else if(c.maker!==n&&c.kind==='chore'){s+=3}
+  else if(c.maker!==n&&c.dealt==null){const w=waitedDays(c);s+=6+Math.min(3,w);r.push([6+w,w>=2?`${c.maker}’s been waiting ${w} days`:`${c.maker} is waiting on this`])}
+  if(c.due!=null){const k=c.due-nowDay(),v=k<0?7:k===0?5:k===1?3:k<=3?2:0;
+    if(v){s+=v;r.push([v,k<0?'Overdue':k===0?'Due today':k===1?'Due tomorrow':`Due ${dayName(c.due)}`])}}
+  if(c.nudge&&c.holder===n){s+=5;r.push([7,`${c.nudge.by} is checking in on this`])}
+  if(c.stamps.length){const v=c.stamps.length*2;s+=v;if(c.stamps.length>=2)r.push([v+.5,`Put off ${c.stamps.length}×`])}
+  const age=Math.floor((now-c.born)/DAY);if(age>0){const v=Math.min(4,age*.5);s+=v;if(age>=4)r.push([v,`Sitting ${age} days`])}
+  if(c.repeat&&!r.length)r.push([0,`🔁 ${repLabel(c.repeat)}`]);
+  r.sort((a,b)=>b[0]-a[0]);return{score:s,reason:r[0]?r[0][1]:''};
+}
+const deckOf=n=>cards.map((c,i)=>({c,i})).filter(x=>x.c.holder===n&&!x.c.slot)
+  .map(x=>({...x,s:why(x.c,n).score})).sort((a,b)=>b.s-a.s||a.i-b.i).map(x=>x.c);
+
+/* ---------- Placement ---------- */
+const busyOf=(n,d,skip)=>events(n,d).concat(cards.filter(c=>c!==skip&&c.holder===n&&c.slot&&c.slot.day===d).map(c=>({s:c.slot.start,e:c.slot.start+Math.max(5,c.mins)})));
+const isFree=(n,d,s,e,skip)=>s>=WAKE&&e<=SLEEP&&busyOf(n,d,skip).every(b=>e<=b.s||s>=b.e);
+function findSlot(c,n){
+  const r=RULES[c.rule],need=Math.max(5,c.mins),gap=need>15?need*2:need+5;
+  for(let d=nowDay();d<nowDay()+10;d++){
+    if(r.weekdays&&isWeekend(d))continue;
+    let t=Math.max(r.from,d===nowDay()?tod()+30:0);t=Math.ceil(t/15)*15;
+    for(;t+need<=r.to;t+=15)if(isFree(n,d,t,t+gap,c))return{day:d,start:t};
+  }
+  return{day:nowDay()+1,start:r.from};
+}
+function fitsNow(c,n){
+  const r=RULES[c.rule],t=tod();
+  if(c.mins>15||(r.weekdays&&isWeekend(nowDay()))||t<r.from||t+c.mins>r.to)return false;
+  return isFree(n,nowDay(),t,t+c.mins+5,c);
+}
+function freeUntil(n){const t=tod();const nx=busyOf(n,nowDay()).filter(b=>b.s>=t).sort((a,b)=>a.s-b.s)[0];return nx?nx.s:SLEEP}
+function slotWords(s){
+  const p=phrase(s.day,Math.floor(s.start/60));
+  const when=s.day===nowDay()?'at':s.day===nowDay()+1?'tomorrow,':dayName(s.day)+',';
+  const day=s.day===nowDay()?'Later today':s.day===nowDay()+1?'Tomorrow':dayName(s.day);
+  return{e:p[0],phrase:p[1],day,text:`${p[0]} ${p[1]}`,line:`Back ${when} ${p[0]} ${p[1]}`};
+}
+
+/* ---------- The chore deal: kids' chores dealt fairly every day after school ---------- */
+const poolFor=d=>pool.filter(p=>occursOn(p.rep,d));
+const isOut=(k,d)=>!!out[k+'@'+d]||events(k,d).some(e=>e.away&&e.e>DEAL_AT);
+const weekMins=k=>ledger.filter(l=>l.who===k&&l.day>nowDay()-7).reduce((a,l)=>a+l.mins,0);
+function assign(chs,d,kids,load,count){
+  const prev=hist[d-1]||{},skipped=[],cap=kids.length===1?CAP+1:CAP;hist[d]=hist[d]||{};
+  chs.slice().sort((a,b)=>b.mins-a.mins).forEach(ch=>{
+    // Even counts first, then fewest minutes this week (weighted by the split), then avoid repeating yesterday's chore
+    let cand=kids.filter(k=>count[k]<cap);
+    if(!cand.length){skipped.push(ch);return}
+    const low=Math.min(...cand.map(k=>count[k]));cand=cand.filter(k=>count[k]===low);
+    const score=k=>(weekMins(k)+load[k])/(share[k]||.5)+(prev[ch.id]===k?40:0);
+    cand.sort((a,b)=>score(a)-score(b));
+    const k=cand[0];load[k]+=ch.mins;count[k]++;hist[d][ch.id]=k;
+    const c=mk({t:ch.t,kind:'chore',tag:'Chore',maker:'Chore deal',holder:k,dealt:d,poolId:ch.id,mins:ch.mins,proof:true});
+    cards.push(c);fresh.add(c.id);
+  });
+  return skipped;
+}
+function deal(d){
+  dealt[d]=true;
+  const stale=cards.filter(c=>c.dealt!=null&&c.dealt<d);
+  // Every dealt chore done = a clean day for that kid. Weekends never count against them.
+  Object.keys(dealt).map(Number).filter(p=>p<d).forEach(p=>KIDS.forEach(k=>{const key=k+'@'+p;if(dayLog[key])return;
+    const had=Object.values(hist[p]||{}).includes(k);dayLog[key]=!had?'out':stale.some(c=>c.holder===k&&c.dealt===p)?(isWeekend(p)?'skip':'miss'):'clean'}));
+  if(stale.length){cards=cards.filter(c=>!stale.includes(c));addLog('var(--muted)',`${stale.length} chore${stale.length>1?'s':''} from before weren’t finished.`)}
+  const kids=KIDS.filter(k=>!isOut(k,d));
+  if(!kids.length){addLog('var(--do)','🎲 Nobody’s home for chores tonight. Skipped.');return}
+  const load={},count={};kids.forEach(k=>{load[k]=0;count[k]=0});
+  const skipped=assign(poolFor(d),d,kids,load,count);
+  const away=KIDS.filter(k=>!kids.includes(k));
+  addLog('var(--do)',`🎲 Chores dealt: ${kids.map(k=>`${k} ${count[k]} (${load[k]} min)`).join(' · ')}${away.length?` · ${away.join(', ')} out tonight`:''}${skipped.length?` · ${skipped.length} skipped`:''}`);
+}
+function redealFor(kid){
+  const d=nowDay();if(!dealt[d])return;
+  const mine=cards.filter(c=>c.dealt===d&&c.holder===kid&&!c.slot);
+  if(!mine.length)return;
+  cards=cards.filter(c=>!mine.includes(c));
+  const kids=KIDS.filter(k=>!isOut(k,d));
+  if(!kids.length){addLog('var(--do)',`🎲 ${mine.length} chores skipped. Nobody else is home.`);return}
+  const load={},count={};kids.forEach(k=>{load[k]=cards.filter(c=>c.dealt===d&&c.holder===k).reduce((a,c)=>a+c.mins,0);count[k]=cards.filter(c=>c.dealt===d&&c.holder===k).length});
+  const skipped=assign(mine.map(c=>pool.find(p=>p.id===c.poolId)||{id:c.poolId,t:c.t,mins:c.mins}),d,kids,load,count);
+  addLog('var(--do)',`🎲 ${kid}’s out tonight. Re-dealt ${mine.length-skipped.length} to ${kids.join(' & ')}${skipped.length?`, ${skipped.length} skipped`:''}.`);
+}
+function runDeals(){if(!dealt[nowDay()]&&tod()>=DEAL_AT)deal(nowDay())}
+
+/* ---------- Shapes ---------- */
+function roundPoly(pts,r){
+  let d='';
+  pts.forEach((p,i)=>{
+    const a=pts[(i-1+pts.length)%pts.length],b=pts[(i+1)%pts.length];
+    const la=Math.hypot(a[0]-p[0],a[1]-p[1]),lb=Math.hypot(b[0]-p[0],b[1]-p[1]),k=Math.min(r,la/2,lb/2);
+    const s=[p[0]+(a[0]-p[0])/la*k,p[1]+(a[1]-p[1])/la*k],e=[p[0]+(b[0]-p[0])/lb*k,p[1]+(b[1]-p[1])/lb*k];
+    d+=`${i?'L':'M'}${s[0].toFixed(1)} ${s[1].toFixed(1)} Q${p[0].toFixed(1)} ${p[1].toFixed(1)} ${e[0].toFixed(1)} ${e[1].toFixed(1)} `;
+  });
+  return d+'Z';
+}
+function shapeFor(kind,w,h){
+  if(kind==='chore'){const c=Math.min(w,h)*.17;return roundPoly([[c,0],[w-c,0],[w,c],[w,h-c],[w-c,h],[c,h],[0,h-c],[0,c]],Math.max(8,Math.min(18,w*.05)))}
+  if(kind==='moment'){const b=Math.max(5,Math.min(12,w*.035)),r=Math.min(26,w*.08);
+    return `M${r} ${b} Q${w/2} ${-b} ${w-r} ${b} Q${w-b} ${b} ${w-b} ${r} Q${w+b} ${h/2} ${w-b} ${h-r} Q${w-b} ${h-b} ${w-r} ${h-b} Q${w/2} ${h+b} ${r} ${h-b} Q${b} ${h-b} ${b} ${h-r} Q${-b} ${h/2} ${b} ${r} Q${b} ${b} ${r} ${b} Z`}
+  return null;
+}
+function applyShapes(root){
+  root.querySelectorAll('.card').forEach(el=>{
+    const f=el.querySelector('.face');if(!f)return;const p=shapeFor(el.dataset.kind,f.offsetWidth,f.offsetHeight);
+    f.style.clipPath=p?`path('${p}')`:'';
+  });
+}
+
+/* ---------- Voice ---------- */
+let lastKind='',voiceT;
+function say(text,kind){
+  if(kind!=='info'&&kind===lastKind)return;
+  lastKind=kind;const v=$('voice');v.textContent=text;v.classList.add('show');stage.classList.add('talking');
+  clearTimeout(voiceT);voiceT=setTimeout(()=>{v.classList.remove('show');stage.classList.remove('talking')},3600);
+}
+const stat=(n,k)=>{const key=n+'@'+nowDay();stats[key]=stats[key]||{done:0,handed:0,closed:0};if(stats[key].closed==null)stats[key].closed=0;if(k)stats[key][k]++;return stats[key]};
+
+/* ---------- Helpers ---------- */
+const $=id=>document.getElementById(id);
+const stage=$('stage'),deck=$('deck'),picker=$('picker'),slot=$('slot'),agentLabel=$('agentLabel'),whenEl=$('whenlist'),overlay=$('overlay'),nudge=$('nudge');
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const lerp=(a,b,t)=>a+(b-a)*t;
+const easeOut=p=>1-Math.pow(1-p,3),easeIn=p=>p*p;
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const PIVOT=41,DAMP=.68+.32*.26,AX=['a','x','y','rx'];
+function tween(D,fn,done){const t0=performance.now();const f=t=>{const p=Math.min(1,(t-t0)/D);fn(p);if(p<1)requestAnimationFrame(f);else if(done)done()};requestAnimationFrame(f)}
+function geo(){const r=deck.getBoundingClientRect(),sr=slot.getBoundingClientRect();
+  return{r,w:r.width,h:r.height,P:{x:r.left+r.width/2,y:r.top+r.height*PIVOT/100},slotY:sr.top+sr.height/2}}
+function chipCenter(k){const c=chips[k].querySelector('.av').getBoundingClientRect();return{x:c.left+c.width/2,y:c.top+c.height/2}}
+const slotClip=(g,y)=>clamp(g.r.top+g.h+y-g.slotY,0,g.h);
+function paint(card,st){
+  card.style.transformOrigin=`50% ${PIVOT}%`;
+  card.style.transform=`translate(${st.x||0}px,${st.y||0}px) rotateX(${st.rx||0}deg) rotate(${st.a||0}deg) scale(${st.s??1})`;
+  card.style.opacity=st.op??1;
+  card.style.clipPath=st.clip>0?`inset(-40px -40px ${st.clip}px -40px)`:'';
+}
+function addLog(color,msg){log.unshift({color,msg,time:fmt(now)});if(log.length>60)log.length=60;renderLog()}
+const isPrivate=c=>c.kind==='moment';
+
+/* ---------- Rendering ---------- */
+function renderClock(){$('clock').innerHTML=`${dayName(nowDay())}<b>${fmt(now)}</b>`}
+function renderTeam(){
+  $('team').innerHTML=PEOPLE.map(p=>`<button type="button" class="who ${p.g}" data-n="${esc(p.n)}" aria-pressed="${p.n===viewer}">
+    <span class="av">${p.i}${p.n===viewer?`<span class="n">${deckOf(p.n).length}</span>`:(w=>w?`<span class="n" style="border-color:var(--team);color:var(--team)" title="You're waiting on ${w} from ${esc(p.n)}">${w}</span>`:'')(waitingFor(viewer).filter(c=>c.holder===p.n).length)}</span>${esc(p.n===viewer?p.n+' (you)':p.n)}</button>`).join('');
+}
+function buildPicker(c){
+  others=PEOPLE.filter(p=>p.n!==viewer);
+  picker.innerHTML=others.map(p=>`<div class="chip ${p.g}${c&&p.n===c.maker&&c.maker!==viewer?' maker':''}"><span class="av">${p.i}</span><span>${esc(p.n)}</span></div>`).join('');
+  chips=[...picker.children];
+}
+function band(c){
+  const b=(cls,who,txt)=>`<div class="band ${cls}"><b><span>${esc(person(who).i)}</span></b>${txt}</div>`;
+  if(c.dealt!=null)return `<div class="band deal">🎲 Today’s chore deal</div>`;
+  if(c.kind==='moment')return c.maker!==c.holder?b('moment',c.maker,`From ${esc(c.maker)} · just for you`):'';
+  if(isReturned(c)){const a=curAsg(c);return b('review',a.to,`Done by ${esc(a.to)} · your review`)}
+  if(c.type==='return')return b('done',c.doneBy,`Done by ${esc(c.doneBy)}`);
+  if(c.sentBack)return b('back',c.sentBack,`Sent back by ${esc(c.sentBack)}`);
+  if(c.maker!==c.holder)return b('from',c.maker,`From ${esc(c.maker)}`);
+  return '';
+}
+function cardHTML(c,top){
+  const w=why(c,viewer).reason,hot=isUrgent(c);
+  if(c.kind==='moment')return `${band(c)}<h2>${esc(c.t)}</h2>${c.note?`<p>${esc(c.note)}</p>`:''}
+    <div class="next"><span>No rush, no reminders</span><span>💌</span></div>
+    <div class="stamp do">Open</div><div class="stamp done">♥</div>`;
+  let body=c.note?`<p>${esc(c.note)}</p>`:'';
+  if(c.items){
+    const show=c.items.slice(0,3),more=c.items.length-3,done=c.items.filter(i=>i.done).length;
+    body+=`<ul class="mini">${show.map(i=>`<li class="${i.done?'x':''}">${i.done?'✓':'○'} ${esc(i.t)}</li>`).join('')}
+      ${more>0?`<li class="more">+${more} more · ${done} of ${c.items.length} checked</li>`:''}</ul>`;
+  }
+  const foot=isReturned(c)?(curAsg(c).cloudId?`<span>🤖 <b>${esc(checksWord(c.cloud&&c.cloud.result))}</b> · accept it</span>`:'<span>✓ <b>Accept it or send it back</b></span>'):c.review?'<span>👍 <b>Give a thumbs-up</b></span>':c.proof?'<span>📸 <b>Prove it</b> when done</span>':c.next?`<span>Next: <b>${esc(c.next)}</b></span>`:c.items?`<span>${c.items.length} items</span>`:c.repeat?`<span>🔁 ${esc(repLabel(c.repeat))}</span>`:'<span></span>';
+  const st=c.stamps.map((e,k)=>`<span style="--r:${[-10,7,-4,12,-8][k%5]}deg">${e}</span>`).join('');
+  return `${band(c)}<div class="meta"><span class="tag">${esc(c.tag||'Task')}</span><span class="mins">~${c.mins} min${c.rule!=='anytime'?' · '+RULES[c.rule].lbl:''}</span></div>
+    <h2>${esc(c.t)}</h2>${top&&w?`<span class="why${hot?' hot':''}">${esc(w)}</span>`:''}${body}
+    <div class="next">${foot}<div class="stamps" title="Put off ${c.stamps.length} times">${st}</div></div>
+    <div class="stamp do">Do it</div><div class="stamp done">Done ✓</div>`;
+}
+function render(){
+  renderClock();renderTeam();
+  const d=deckOf(viewer);
+  // The assignee has now seen the card on top of their deck
+  if(d[0]){const a=curAsg(d[0]);if(a&&a.to===viewer&&a.state==='sent'){setState(a,'seen');touch(d[0])}}
+  buildPicker(d[0]);
+  $('agentLabel').lastChild.textContent=`${agentOf(viewer)} · ${viewer===CLOUD.me&&agentConnected()?'connected':'not connected'}`;
+  $('cloudBtn').className='cloudbtn'+(agentConnected()?' on':'');$('cloudBtn').title=agentConnected()?`${CLOUD.agent} connected · ${auth.user.email||''}`:`${CLOUD.agent} · sign in to connect`;
+  save();
+  renderMyDay();renderWaitBtn();if(!$('waitLayer').hidden)renderWaitSheet();
+  deck.innerHTML='';
+  if(!d.length){const n=stat(viewer).done;deck.innerHTML=`<div class="empty"><div><b>All clear 🎉</b>${n?`${n} done today. `:''}Nothing in ${esc(viewer)}’s deck right now. Cards put off with Not now come back on their own.</div></div>`;return}
+  const n=Math.min(3,d.length);
+  for(let k=n-1;k>=0;k--){
+    const c=d[k],el=document.createElement('div');
+    el.className=`card ${c.kind}${isUrgent(c)?' urgent':''}`;el.dataset.kind=c.kind;
+    el.innerHTML=`<div class="face">${cardHTML(c,k===0)}</div>`;
+    el.style.transform=`translateY(${k*16}px) scale(${1-k*.05})`;
+    el.style.zIndex=10-k;
+    if(k>0)el.style.pointerEvents='none';
+    deck.appendChild(el);
+    if(k===0){
+      bind(el,c);
+      if(fresh.has(c.id))el.animate([{transform:'translateY(-60px) scale(.9)',opacity:0},{transform:'none',opacity:1}],{duration:420,easing:'cubic-bezier(.2,.9,.3,1.3)'});
+    }
+  }
+  applyShapes(deck);
+  d.forEach(c=>fresh.delete(c.id));
+}
+function renderLog(){
+  const ul=$('log');
+  if(!log.length){ul.innerHTML='<li class="none">Nothing yet. Swipe the top card.</li>';return}
+  ul.innerHTML=log.slice(0,8).map(e=>`<li><i style="background:${e.color}"></i><span>${esc(e.msg)}</span><em>${e.time}</em></li>`).join('');
+}
+
+/* ---------- Undo ----------
+   Every action can be undone for a few seconds. Undo restores the card, but anything already delivered
+   to another person or an agent is not silently erased: that assignment stays on the card as "cancelled"
+   and the activity log says it was undone. */
+const UNDO_MS=6000;let undoRec=null,undoT=0,wsRedraw=null;
+function snapUndo(c,act,label){
+  undoRec={id:c.id,snap:JSON.parse(JSON.stringify(c)),idx:cards.indexOf(c),ids:new Set(cards.map(x=>x.id)),
+    ledgerLen:ledger.length,stats:JSON.parse(JSON.stringify(stats)),act,label,by:viewer,ready:false};
+}
+function showUndo(){
+  if(!undoRec||undoRec.ready)return;undoRec.ready=true;
+  const bar=$('undoBar');$('undoTxt').textContent=undoRec.label;bar.style.setProperty('--t',UNDO_MS+'ms');
+  bar.classList.remove('show');void bar.offsetWidth;bar.classList.add('show');
+  clearTimeout(undoT);undoT=setTimeout(hideUndo,UNDO_MS);
+}
+function hideUndo(){$('undoBar').classList.remove('show');undoRec=null;clearTimeout(undoT)}
+function undo(){
+  const u=undoRec;if(!u||!u.ready||u.by!==viewer||(busy&&u.act!=='edit'))return;hideUndo();
+  const live=cards.find(x=>x.id===u.id)||archive.find(x=>x.id===u.id);
+  // Assignments the action created or moved forward, before we restore the card
+  const added=live?(live.asg||[]).slice(u.snap.asg.length):[],changed=live?(live.asg||[]).slice(0,u.snap.asg.length).filter((a,i)=>a.state!==u.snap.asg[i].state):[];
+  const createdOthers=cards.filter(x=>!u.ids.has(x.id)&&x.id!==u.id);
+  cards=cards.filter(x=>u.ids.has(x.id)||x.id===u.id);
+  {const i=archive.findIndex(x=>x.id===u.id);if(i>=0)archive.splice(i,1)}
+  const v=live?live.version:u.snap.version;
+  let c=cards.find(x=>x.id===u.id);
+  if(c){for(const k of Object.keys(c))delete c[k];Object.assign(c,u.snap)}else{c=u.snap;cards.splice(Math.min(u.idx<0?cards.length:u.idx,cards.length),0,c)}
+  // Delivered hand-offs stay on the record as cancelled, never erased. A hand-off that reached the server is cancelled there too.
+  added.forEach(a=>c.asg.push({...a,state:'cancelled',updated:now,undone:true}));
+  added.filter(a=>a.cloudId).forEach(a=>cloudOp('cancel',{assignment_id:a.cloudId}).catch(()=>{}));
+  if(added.some(a=>a.kind==='agent'))delete c.cloud;
+  c.version=v;touch(c);
+  ledger.length=Math.min(ledger.length,u.ledgerLen);stats=u.stats;fresh.add(c.id);
+  const delivered=added.filter(a=>a.state!=='not_sent').length||changed.length||createdOthers.some(x=>x.holder!==viewer);
+  addLog('var(--muted)',`↩ ${viewer} undid: ${u.label}${delivered?' (the hand-off is cancelled, not erased)':''}`);
+  toast('Undone');
+  if(busy&&u.act==='edit'&&!overlay.hidden&&wsRedraw){save();wsRedraw()}else render();
+}
+$('undoBtn').onclick=undo;
+document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='z'&&!(e.target.closest&&e.target.closest('input,textarea'))){e.preventDefault();undo()}});
+function toast(t){const el=$('toast');el.textContent=t;el.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>el.classList.remove('show'),2600)}
+const ago=m=>{m=now-m;return m<2?'just now':m<60?`${m} min`:m<DAY?`${Math.floor(m/60)} hr${m>=120?'s':''}`:`${Math.floor(m/DAY)} day${m>=2*DAY?'s':''}`};
+
+/* ---------- Waiting on: a view of the assignments you sent ---------- */
+const STATE_WORD=(a,c)=>{
+  if(a.kind==='agent'&&c&&c.cloud&&(a.cloudId||c.cloud.sending)){const k=c.cloud;   // mirrored from the server
+    if(k.sending)return `Sending to ${a.to}…`;
+    if(k.error)return `Couldn’t reach the server · ${k.error}`;
+    return a.state==='not_sent'?'Not sent yet':a.state==='sent'?`Sent · ${a.to} started a run`:a.state==='seen'?`${a.to} acknowledged · working on it`
+      :a.state==='needs_info'?`${a.to} has a question: ${k.blocker||'(no details)'}`:a.state==='delivery_failed'?`Delivery failed · HTTP ${k.http??'no reply'} · try again`:a.state}
+  if(a.kind==='agent'&&c&&c.cloud&&c.cloud.error)return `Couldn’t reach the server · ${c.cloud.error}`;
+  return a.state==='not_sent'?(a.kind==='agent'&&agentConnected()&&a.by===CLOUD.me?`Not sent — only the handshake probe is wired to ${a.to} yet`:`Not sent — ${a.to} isn’t connected`):a.state==='sent'?'Sent · not opened yet':a.state==='seen'?'Seen':a.state==='needs_info'?'Has a question for you':a.state};
+function renderWaitBtn(){
+  const w=waitingFor(viewer),b=$('waitBtn');
+  b.className='waitpile'+(w.length?'':' none');
+  b.setAttribute('aria-label',`Waiting on ${w.length} card${w.length===1?'':'s'}`);
+  b.innerHTML=`<span class="fan">${[0,1,2].map(i=>{const c=w[w.length-3+i];return `<i class="${c&&c.holder.startsWith('agent:')?'agent':''}"></i>`}).join('')}</span><span>Waiting on<b>${w.length}</b></span>`;
+}
+let dropArm=null;
+function renderWaitSheet(){
+  const w=waitingFor(viewer).map(c=>({c,a:myAsg(c,viewer)})).sort((x,y)=>x.a.at-y.a.at);
+  $('waitSheet').innerHTML=`<div class="grab"></div><h3 id="waitH">Waiting on</h3><div class="sub">Cards you handed off that aren’t back yet. They’re the same cards, not copies.</div>
+    <div class="wlist">${w.length?w.map(({c,a},i)=>{const agent=a.kind==='agent',holding=c.holder===a.to||c.holder==='agent:'+viewer,cloud=agent&&c.cloud&&(a.cloudId||c.cloud.sending||c.cloud.error);
+      const nudged=c.nudge&&nowDay()===Math.floor(c.nudge.at/DAY);
+      return `<div class="wcard ${c.kind}" style="animation-delay:${i*45}ms"><div class="wtop"><span>${agent?'🤖':'→'} ${esc(a.to)}${!holding&&!agent?` · now with ${esc(c.holder)}`:''}</span><span>${ago(a.at)}</span></div>
+        <b>${esc(c.t)}</b><span class="wstate ${a.state}">${esc(STATE_WORD(a,c))}</span>
+        <div class="wact">${agent?'':`<button type="button" data-a="nudge" data-id="${c.id}" ${nudged?'disabled':''}>${nudged?'Nudged today':'👋 Nudge'}</button>`}
+          ${cloud?`<button type="button" data-a="refresh" data-id="${c.id}" ${c.cloud.sending?'disabled':''}>↻ Refresh</button><button type="button" data-a="resend" data-id="${c.id}" ${c.cloud.sending?'disabled':''}>${a.state==='delivery_failed'||c.cloud.error||!a.cloudId?'Try again':'Send again'}</button>`:''}
+          <button type="button" data-a="back" data-id="${c.id}">↩ Take back</button>
+          <button type="button" class="warn" data-a="drop" data-id="${c.id}">${dropArm===c.id?'Sure? Drop it':'Drop'}</button></div></div>`}).join('')
+      :`<div class="wempty">Nothing out right now. Swipe a card up to hand it off${AGENTS[viewer]?`, or down to park it for ${esc(agentOf(viewer))}`:''}.</div>`}</div>`;
+  $('waitSheet').querySelectorAll('.wact button').forEach(b=>b.onclick=()=>waitAction(b.dataset.a,b.dataset.id));
+}
+async function waitAction(act,id){
+  const c=cards.find(x=>x.id===id);if(!c)return;const a=myAsg(c,viewer);if(!a)return;
+  if(act==='refresh'){try{await syncProbe();toast('Up to date')}catch(e){toast('Couldn’t reach the server')}render();return}
+  if(act==='resend'){
+    if(!a.cloudId){cloudSend(c,a);render();return}                    // never got created on the server: start over
+    c.cloud.sending=true;c.cloud.error=null;render();
+    try{const r=await cloudOp('dispatch',{assignment_id:a.cloudId,redeliver:true});c.cloud.sending=false;
+      addLog('var(--agent)',r.accepted?`🤖 Sent “${c.t}” to ${a.to} again · run started`:`⚠ ${a.to} didn’t accept “${c.t}” (HTTP ${r.http_status??'—'})`);
+      toast(r.accepted?`${a.to} started a new run`:`Not accepted (HTTP ${r.http_status??'no reply'})`);await syncProbe()}
+    catch(e){c.cloud.sending=false;c.cloud.error=e.message||'network';toast('Couldn’t reach the server')}
+    render();return;
+  }
+  // A cancel on a delivered cloud assignment is final on the server, so it is confirmed there first and not undoable here
+  if((act==='back'||(act==='drop'&&dropArm===id))&&a.cloudId){
+    try{await cloudOp('cancel',{assignment_id:a.cloudId});if(c.cloud)c.cloud.state='cancelled'}catch(e){toast('Couldn’t reach the server. Try again.');return}
+  }else if(act==='back'||(act==='drop'&&dropArm===id))snapUndo(c,'wait-'+act,(act==='back'?'Took back: ':'Dropped: ')+c.t);
+  if(act==='nudge'){c.nudge={by:viewer,at:now};touch(c);addLog('var(--team)',`👋 ${viewer} nudged ${c.holder} about “${c.t}”`);toast(`Nudged ${c.holder}. It moves up in their deck.`)}
+  if(act==='back'){
+    // A delivered assignment is cancelled on the record, never silently erased
+    setState(a,'cancelled');c.holder=viewer;c.status='open';c.nudge=null;c.sentBack=null;c.doneBy=null;touch(c);fresh.add(c.id);
+    addLog('var(--muted)',a.kind==='agent'?(a.cloudId?`${viewer} took back “${c.t}” from ${a.to} (cancelled on the server)`:`${viewer} took back “${c.t}” (it was never sent)`):`${viewer} took back “${c.t}” from ${a.to}`);
+    toast(a.cloudId?`Cancelled with ${a.to}. Back in your deck.`:'Back in your deck');
+  }
+  if(act==='drop'){
+    if(dropArm!==id){dropArm=id;return renderWaitSheet()}
+    setState(a,'cancelled');archiveCard(c,'dropped');addLog('var(--muted)',`${viewer} dropped “${c.t}”`);toast('Dropped');
+  }
+  dropArm=null;render();showUndo();
+}
+function openWait(){if(busy)return;dropArm=null;$('waitLayer').hidden=false;renderWaitSheet();$('waitSheet').focus?.()}
+function closeWait(){$('waitLayer').hidden=true;dropArm=null;if(document.activeElement&&document.activeElement.blur)document.activeElement.blur()}
+$('waitBtn').onclick=openWait;$('waitScrim').onclick=closeWait;
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('waitLayer').hidden)closeWait()});
+
+/* ---------- Cloud: Supabase + Grok Bot (Stage 1) ----------
+   Only the synthetic handshake probe (TD-PROBE-001) is wired to a real agent in this stage. Everything the
+   app shows about it is mirrored from the server (td_assignment_status); the app never writes tables.
+   The user signs in with Supabase Auth (email + password); the session lives in localStorage. The
+   publishable key below is public by design: row-level security decides what a signed-in user can read. */
+const CLOUD={url:new URLSearchParams(location.search).get('cloud')||'https://twyfdtmykgemlvlrhxkm.supabase.co',
+  key:'sb_publishable_W-CtSgzyqB6KqtO4eIR5dw_1-RUEm5u',ref:'TD-PROBE-001',agent:'Grok Bot',me:'Kyle'};
+const AUTH_STORE='taskdeck.auth',LIVE_STATES=['not_sent','sent','delivery_failed','seen','needs_info','returned'];
+let auth=null,pollT=0,syncing=false;
+try{auth=JSON.parse(localStorage.getItem(AUTH_STORE)||'null');if(auth&&!auth.access_token)auth=null}catch(e){auth=null}
+function agentConnected(){return!!auth}
+const saveAuth=()=>{try{if(auth)localStorage.setItem(AUTH_STORE,JSON.stringify(auth));else localStorage.removeItem(AUTH_STORE)}catch(e){}};
+const hdr=withUser=>({apikey:CLOUD.key,'content-type':'application/json',...(withUser&&auth?{authorization:'Bearer '+auth.access_token}:{})});
+const sessionOf=s=>({access_token:s.access_token,refresh_token:s.refresh_token,expires_at:s.expires_at||Math.floor(Date.now()/1000)+(s.expires_in||3600),user:{id:s.user&&s.user.id,email:s.user&&s.user.email}});
+async function refreshAuth(){
+  if(!auth||!auth.refresh_token)return false;
+  try{const r=await fetch(`${CLOUD.url}/auth/v1/token?grant_type=refresh_token`,{method:'POST',headers:hdr(false),body:JSON.stringify({refresh_token:auth.refresh_token})});
+    if(!r.ok)return false;auth=sessionOf(await r.json());saveAuth();return true}catch(e){return false}
+}
+async function cloudFetch(path,opts,retry=true){
+  if(!auth)throw new Error('sign_in_required');
+  if(auth.expires_at&&auth.expires_at*1000<Date.now()+60000)await refreshAuth();
+  const r=await fetch(CLOUD.url+path,{...opts,headers:{...hdr(true),...(opts.headers||{})}});
+  if(r.status===401&&retry&&await refreshAuth())return cloudFetch(path,opts,false);
+  if(r.status===401){signOutLocal();if(!busy)render();throw new Error('sign_in_required')}
+  const text=await r.text();let body;try{body=JSON.parse(text)}catch(e){body={raw:text}}
+  if(!r.ok)throw Object.assign(new Error((body&&(body.error||body.message||body.msg))||('HTTP '+r.status)),{status:r.status,body});
+  return body;
+}
+const cloudRpc=(fn,args)=>cloudFetch(`/rest/v1/rpc/${fn}`,{method:'POST',body:JSON.stringify(args)});
+const cloudOp=(op,args)=>cloudFetch('/functions/v1/td-user',{method:'POST',body:JSON.stringify({op,...args})});
+async function signIn(email,password){
+  const r=await fetch(`${CLOUD.url}/auth/v1/token?grant_type=password`,{method:'POST',headers:hdr(false),body:JSON.stringify({email,password})});
+  const s=await r.json().catch(()=>({}));
+  if(!r.ok||!s.access_token)throw new Error(s.error_description||s.msg||s.message||s.error||'Sign-in failed');
+  auth=sessionOf(s);saveAuth();
+}
+function signOutLocal(){auth=null;saveAuth();clearTimeout(pollT)}
+async function signOut(){try{if(auth)await fetch(`${CLOUD.url}/auth/v1/logout`,{method:'POST',headers:hdr(true)})}catch(e){}signOutLocal()}
+
+const probeCard=()=>cards.find(c=>c.probe);
+const checksWord=r=>{const k=r&&r.checks;if(!k)return 'result pending';const keys=['ack_text','assignment_id','challenge','challenge_reversed','sum'];const n=keys.filter(x=>k[x]===true).length;return k.all_passed?`all ${keys.length} checks passed`:`${n} of ${keys.length} checks passed`};
+function ensureProbeCard(){
+  let c=probeCard();if(c)return c;
+  c=mk({t:'Task Deck handshake probe',tag:'Probe',maker:CLOUD.me,holder:CLOUD.me,mins:1,rule:'anytime',probe:true,src:'probe',
+    note:`Synthetic test assignment ${CLOUD.ref}. Swipe down to send it to ${CLOUD.agent}: it acknowledges, solves a small challenge and writes the result back here.`,
+    next:`Swipe down to send it to ${CLOUD.agent}`});
+  cards.unshift(c);fresh.add(c.id);return c;
+}
+// Mirror the server's view of the probe onto the local card. The server is authoritative; the card follows it.
+async function syncProbe(opts){
+  if(!auth||syncing)return null;syncing=true;
+  try{
+    const s=await cloudRpc('td_assignment_status',{p_ref:CLOUD.ref});
+    const a=s&&s.found?s.assignment:null;
+    let c=probeCard();
+    if(a){
+      const live=LIVE_STATES.includes(a.state);
+      let loc=c?(c.asg||[]).find(x=>x.cloudId===a.id):null;
+      if(loc||live){
+        if(!c)c=ensureProbeCard();
+        if(!loc){loc={id:uid(),cloudId:a.id,to:CLOUD.agent,kind:'agent',state:a.state,at:now,by:CLOUD.me};(c.asg=c.asg||[]).push(loc)}
+        const changed=loc.state!==a.state;
+        if(changed)setState(loc,a.state);
+        const last=(s.deliveries||[]).at(-1);
+        c.cloud={asgId:a.id,taskId:s.task&&s.task.id,state:a.state,version:a.version,blocker:a.blocker,result:s.result,deliveries:s.deliveries||[],events:s.events||[],
+          http:last?last.http_status:null,at:Date.now(),error:null,sending:false};
+        if(live){
+          c.holder=a.state==='returned'?CLOUD.me:'agent:'+CLOUD.me;c.status='assigned';c.slot=null;c.doneBy=a.state==='returned'?CLOUD.agent:null;
+          if(changed&&a.state==='returned'){fresh.add(c.id);c.handedAt=now;addLog('var(--agent)',`🤖 ${CLOUD.agent} finished “${c.t}” · ${checksWord(s.result)} · your review`)}
+          else if(changed&&a.state==='seen')addLog('var(--agent)',`🤖 ${CLOUD.agent} acknowledged “${c.t}”`);
+          else if(changed&&a.state==='needs_info')addLog('var(--later)',`🤖 ${CLOUD.agent} has a question about “${c.t}”: ${a.blocker||''}`);
+          else if(changed&&a.state==='delivery_failed')addLog('var(--later)',`⚠ Delivery of “${c.t}” to ${CLOUD.agent} failed`);
+        }else if(a.state==='accepted'&&cards.includes(c)){archiveCard(c,'done');addLog('var(--do)',`✓ “${c.t}” is accepted on the server`)}
+        else if(['cancelled','declined','reopened'].includes(a.state)&&cards.includes(c)&&c.holder!==CLOUD.me){c.holder=CLOUD.me;c.status='open';c.doneBy=null;addLog('var(--muted)',`“${c.t}” was cancelled on the server · back in ${CLOUD.me}’s deck`)}
+        touch(c);
+      }
+    }
+    if(opts&&opts.ensure)ensureProbeCard();
+    return s;
+  }finally{syncing=false}
+}
+function schedulePoll(ms){clearTimeout(pollT);if(auth)pollT=setTimeout(pollProbe,ms)}
+async function pollProbe(){
+  if(!auth)return;
+  const c=probeCard(),k=c&&c.cloud,live=!!k&&['not_sent','sent','delivery_failed','seen','needs_info'].includes(k.state)&&!k.sending;
+  if(live&&document.visibilityState==='visible'){
+    const before=k.state;
+    try{await syncProbe();const after=probeCard()&&probeCard().cloud;if(after&&after.state!==before&&!busy)render()}catch(e){}
+  }
+  schedulePoll(live?6000:30000);
+}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&auth)pollProbe()});
+// Send the probe: create (idempotent) then dispatch. Undo or a take-back meanwhile cancels it on the server.
+async function cloudSend(c,a){
+  const gone=()=>!cards.includes(c)||!(c.asg||[]).includes(a)||a.state==='cancelled';
+  c.cloud=Object.assign(c.cloud||{},{sending:true,error:null});
+  try{
+    const r1=await cloudOp('create_probe',{task_id:c.id});
+    const srv=r1.assignment;if(!srv||!srv.id)throw new Error('no assignment returned');
+    a.cloudId=srv.id;
+    if(gone()){cloudOp('cancel',{assignment_id:srv.id}).catch(()=>{});return}
+    c.cloud=Object.assign(c.cloud,{asgId:srv.id,taskId:r1.task&&r1.task.id,state:srv.state,version:srv.version,at:Date.now()});
+    const r2=await cloudOp('dispatch',{assignment_id:srv.id});
+    if(gone()){cloudOp('cancel',{assignment_id:srv.id}).catch(()=>{});return}
+    const st=r2.state||(r2.accepted?'sent':'delivery_failed');
+    setState(a,st);Object.assign(c.cloud,{state:st,version:r2.version??c.cloud.version,http:r2.http_status??null,sending:false});touch(c);
+    if(r2.skipped)addLog('var(--agent)',`“${c.t}” was already with ${CLOUD.agent} (${st})`);
+    else if(r2.accepted){addLog('var(--agent)',`🤖 Sent “${c.t}” to ${CLOUD.agent} · run started`);say(`${CLOUD.agent} started a run. Watch Waiting on.`,'info')}
+    else{addLog('var(--later)',`⚠ ${CLOUD.agent} didn’t accept “${c.t}” (HTTP ${r2.http_status??'no reply'})`);say(`Delivery failed (HTTP ${r2.http_status??'no reply'}). Try again from Waiting on.`,'info')}
+  }catch(e){
+    if(gone())return;
+    Object.assign(c.cloud,{error:e.message||'network error',sending:false});touch(c);
+    addLog('var(--later)',`⚠ Couldn’t send “${c.t}” to ${CLOUD.agent}: ${e.message||'network error'}`);
+    say(e.message==='sign_in_required'?'Signed out. Sign in again to send it.':'Couldn’t reach the server. It’s in Waiting on; try again there.','info');
+  }
+  if(!busy)render();schedulePoll(1500);
+}
+function cloudReview(c){
+  const r=c.cloud&&c.cloud.result;
+  if(!r)return `<div class="qp"><div class="qph">🤖 ${esc(CLOUD.agent)} returned this</div><div class="qtip"><span>…</span><span>The result hasn’t loaded yet. Open Waiting on and tap Refresh.</span></div></div>`;
+  const k=r.checks||{},names={ack_text:'Acknowledgment text matches',assignment_id:'Assignment id matches',challenge:'Challenge echoed back',challenge_reversed:'Challenge reversed correctly',sum:'Numbers summed correctly'};
+  const when=r.received_at?new Date(r.received_at).toLocaleString([],{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'';
+  return `<div class="qp"><div class="qph">🤖 ${esc(CLOUD.agent)} says: “${esc((r.payload&&r.payload.acknowledgment)||'(no acknowledgment text)')}”</div>
+    <ul class="checks">${Object.keys(names).map(x=>`<li class="${k[x]===true?'ok':'bad'}">${k[x]===true?'✓':'✗'} ${names[x]}</li>`).join('')}</ul>
+    <div class="qtip"><span>${k.all_passed?'✅':'⚠️'}</span><span>${k.all_passed?'The server verified every check.':'Some checks failed. The result is recorded as it came in.'}${when?` Received ${esc(when)}.`:''}</span></div></div>`;
+}
+function openCloud(){if(busy)return;$('cloudLayer').hidden=false;renderCloudSheet()}
+function closeCloud(){$('cloudLayer').hidden=true;if(document.activeElement&&document.activeElement.blur)document.activeElement.blur()}
+function renderCloudSheet(){
+  const el=$('cloudSheet');
+  if(!auth){
+    el.innerHTML=`<div class="grab"></div><h3 id="cloudH">Connect ${esc(CLOUD.agent)}</h3><div class="sub">Sign in to your Task Deck account. In this stage only the handshake probe is sent to ${esc(CLOUD.agent)}; nothing else leaves this device.</div>
+      <form id="cloudForm" class="cform"><input id="cEmail" type="email" placeholder="Email" autocomplete="username" required><input id="cPass" type="password" placeholder="Password" autocomplete="current-password" required>
+      <div class="cerr" id="cErr" hidden></div><div class="actions"><button type="submit" class="primary" id="cGo">Sign in</button><button type="button" class="quiet" id="cClose">Cancel</button></div></form>`;
+    $('cloudForm').onsubmit=async e=>{e.preventDefault();const b=$('cGo');b.disabled=true;b.textContent='Signing in…';$('cErr').hidden=true;
+      try{await signIn($('cEmail').value.trim(),$('cPass').value);
+        try{await syncProbe({ensure:true})}catch(x){ensureProbeCard()}
+        addLog('var(--agent)',`🤖 ${CLOUD.agent} connected`);render();renderCloudSheet();toast(`Connected. ${CLOUD.agent} is ready.`);schedulePoll(3000)}
+      catch(err){$('cErr').textContent=err.message||'Sign-in failed';$('cErr').hidden=false;b.disabled=false;b.textContent='Sign in'}};
+    $('cClose').onclick=closeCloud;$('cEmail').focus();return;
+  }
+  const c=probeCard(),a=c&&curAsg(c),k=c&&c.cloud;
+  const line=!c?`No handshake probe card in ${esc(CLOUD.me)}’s deck right now.`:k&&a&&a.kind==='agent'&&(a.cloudId||k.sending||k.error)?`Handshake probe: <b>${esc(a.state==='returned'?`back for your review · ${checksWord(k.result)}`:STATE_WORD(a,c))}</b>`:`Handshake probe: <b>in ${esc(CLOUD.me)}’s deck, not sent yet</b>`;
+  el.innerHTML=`<div class="grab"></div><h3 id="cloudH">${esc(CLOUD.agent)} · connected</h3><div class="sub">Signed in as ${esc(auth.user.email||'')} · ${esc(CLOUD.url.replace(/^https?:\/\//,''))}</div>
+    <div class="cstat">${line}</div>
+    <div class="actions">${c?'':`<button type="button" class="primary" id="cProbe">＋ Add the handshake probe</button>`}<button type="button" id="cRefresh">↻ Refresh</button><button type="button" class="quiet" id="cOut">Sign out</button></div>`;
+  const cp=$('cProbe');if(cp)cp.onclick=()=>{ensureProbeCard();viewer=CLOUD.me;render();closeCloud();toast('Probe card added to the top of the deck')};
+  $('cRefresh').onclick=async()=>{const b=$('cRefresh');b.disabled=true;try{await syncProbe();toast('Up to date')}catch(e){toast(e.message==='sign_in_required'?'Signed out':'Couldn’t reach the server')}render();renderCloudSheet()};
+  $('cOut').onclick=async()=>{await signOut();addLog('var(--muted)',`${CLOUD.agent} disconnected (signed out)`);render();renderCloudSheet()};
+}
+$('cloudBtn').onclick=openCloud;$('cloudScrim').onclick=closeCloud;
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('cloudLayer').hidden)closeCloud()});
+
+/* ---------- Streaks: forgiving on purpose ----------
+   A day is "clean" when nothing was left overdue and nothing hit 3 stamps (adults),
+   or every dealt chore got done (kids). Weekends never break a streak, and one miss
+   every 7 days is forgiven as a pass day. */
+function streakOf(n){
+  let s=0,pass=null;
+  for(let d=nowDay()-1;d>nowDay()-90;d--){
+    const r=dayLog[n+'@'+d];
+    if(r==null)break;
+    if(r==='clean'){s++;continue}
+    if(r==='skip'||r==='out')continue;
+    if(pass==null||pass-d>=7){pass=d;continue}
+    break;
+  }
+  return{n:s,pass:pass!=null&&nowDay()-pass<=7};
+}
+const dirtyCards=n=>cards.filter(c=>c.holder===n&&c.type==='task'&&c.kind!=='moment'&&c.dealt==null&&((c.due!=null&&c.due<=nowDay())||c.stamps.length>=DECIDE_AT));
+function closeDays(from,to){ // adults: judge each finished day once, when the clock rolls past it
+  for(let p=from;p<to;p++)PARENTS.forEach(n=>{const k=n+'@'+p;if(dayLog[k])return;
+    const dirty=cards.some(c=>c.holder===n&&c.type==='task'&&c.kind!=='moment'&&c.dealt==null&&((c.due!=null&&c.due<=p)||c.stamps.length>=DECIDE_AT));
+    dayLog[k]=dirty?(isWeekend(p)?'skip':'miss'):'clean'});
+}
+/* ---------- Points: effort, not count. Only chores a parent approved count. ---------- */
+const weekStart=d=>d-((dow(d)+6)%7); // weeks run Monday to Sunday
+const ptsIn=(k,a,b,ok=true)=>ledger.filter(l=>l.who===k&&!!l.ok===ok&&l.day>=a&&l.day<b).reduce((s,l)=>s+l.mins,0);
+const GOALS=[['🍕','Pizza night'],['🎬','Kids pick the weekend movie'],['🍦','Ice cream run'],['🌙','Late bedtime Saturday']],GOAL_PTS=300;
+function bestWeek(k){let b=0;const w0=weekStart(nowDay());for(let w=w0-7;w>w0-7*12;w-=7)b=Math.max(b,ptsIn(k,w,w+7));return b}
+
+/* ---------- My day: private. Nobody else sees your numbers. ---------- */
+function renderMyDay(){
+  const el=$('myday'),n=viewer,t=nowDay(),st=stat(n),s=streakOf(n),risk=PARENTS.includes(n)?dirtyCards(n):[];
+  const days=Array.from({length:7},(_,k)=>t-6+k),done=days.map(d=>(stats[n+'@'+d]||{}).done||0),max=Math.max(3,...done);
+  const wk=done.reduce((a,b)=>a+b,0),handed=days.reduce((a,d)=>a+((stats[n+'@'+d]||{}).handed||0),0),bi=done.indexOf(Math.max(...done));
+  const open=el.open;
+  el.innerHTML=`<summary><span class="m">🔥 <b>${s.n}</b> day clean slate</span><span class="m">✓ <b>${st.done}</b> done today</span><span class="mlock">🔒 Only you</span></summary>
+    ${risk.length?`<div class="risk">Keep the streak alive today: ${risk.slice(0,3).map(c=>`${esc(c.t)} (${c.stamps.length>=DECIDE_AT?`put off ${c.stamps.length}×`:c.due<t?'overdue':'due today'})`).join(', ')}.</div>`:PARENTS.includes(n)?`<div class="risk" style="color:var(--do)">Nothing overdue and nothing dodged. Today counts toward the streak.</div>`:''}
+    <div class="wkbars">${days.map((d,i)=>`<div class="${dayLog[n+'@'+d]==='clean'?'clean':''}" title="${dayName(d)}: ${done[i]} done"><i style="height:${Math.max(3,done[i]/max*52)}px"></i>${shortDay(d).slice(0,2)}</div>`).join('')}</div>
+    <div class="recap">Last 7 days: ${wk} done · ${handed} handed off${wk?` · best day ${dayName(days[bi])} (${done[bi]})`:''}. Gold outline = a clean-slate day.</div>`;
+  el.open=open;
+}
+function burst(){
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+  const b=document.createElement('div');b.className='burst';
+  b.innerHTML=Array.from({length:16},(_,i)=>{const a=i/16*Math.PI*2,r=90+Math.random()*70;
+    return `<span style="--x:${Math.cos(a)*r}px;--y:${Math.sin(a)*r-40}px;--r:${Math.random()*360-180}deg">${['🎉','✨','⭐','💚'][i%4]}</span>`}).join('');
+  stage.appendChild(b);setTimeout(()=>b.remove(),1300);
+}
+
+/* ---------- Quick add: one line, the app works out the rest ---------- */
+const NAME_MAP={'the kids':'__kids',kids:'__kids',kyle:'Kyle',me:'__me',ashley:'Ashley',ash:'Ashley',myla:'Myla',mila:'Myla',kuhlly:'Kuhlly',cully:'Kuhlly',kuhlen:'Kuhlly',cullen:'Kuhlly',shelie:'Shelie',mom:'Shelie',cindy:'Cindy'};
+const DOWRX='(?:sundays?|sun|mondays?|mon|tuesdays?|tues|tue|wednesdays?|weds|wed|thursdays?|thurs|thur|thu|fridays?|fri|saturdays?|sat)';
+const dowOf=w=>({sun:0,mon:1,tue:2,wed:3,thu:4,fri:5,sat:6})[w.toLowerCase().slice(0,3)];
+const CHORE_RX=/\b(sweep|vacuum|dishes|dishwasher|trash|garbage|laundry|fold|feed|mow|rake|clean (your|the) room|make (your|the) bed|set the table|clear the table|wipe|dust|water the plants|filter|counters|mop)\b/i;
+function parseLine(raw){
+  let s=' '+raw.trim()+' ';
+  const p={who:'__me',kind:null,repeat:null,at:null,due:null,title:''};
+  const cut=(re,fn)=>{const m=s.match(re);if(m){fn(m);s=s.slice(0,m.index)+' '+s.slice(m.index+m[0].length)}return m};
+  cut(/^\s*tell\s+(\w+)\s+(to\s+|that\s+)?/i,m=>{p.kind='moment';p.who=NAME_MAP[m[1].toLowerCase()]||'__me'});
+  if(p.kind!=='moment'){
+    cut(/^\s*(the kids|kids|kyle|me|ashley|ash|myla|mila|kuhlly|cully|kuhlen|cullen|shelie|mom|cindy)\b[:,]?/i,m=>{p.who=NAME_MAP[m[1].toLowerCase()]});
+    cut(/\bfor (the kids|kids|kyle|ashley|myla|kuhlly|cully|shelie|mom|cindy)\b/i,m=>{p.who=NAME_MAP[m[1].toLowerCase()]});
+  }
+  const today=nowDay();
+  cut(/\bby (today|tonight|tomorrow|the (\d{1,2})(?:st|nd|rd|th)|(\w+day))\b/i,m=>{
+    const w=m[1].toLowerCase();
+    if(w==='today'||w==='tonight')p.due=today;else if(w==='tomorrow')p.due=today+1;
+    else if(m[2]){const n=+m[2];for(let d=today;d<today+62;d++)if(dateOf(d).getDate()===n){p.due=d;break}}
+    else if(dowOf(w)!=null){for(let d=today;d<today+8;d++)if(dow(d)===dowOf(w)){p.due=d;break}}
+  });
+  cut(/\bevery (\d+) months?\b/i,m=>{p.repeat={type:'monthly',dom:dateOf(today).getDate(),interval:+m[1]}});
+  if(!p.repeat)cut(/\b(?:on )?the (\d{1,2})(?:st|nd|rd|th)(?: of (?:the|each|every) month)?(?: every month| each month| monthly)?\b/i,m=>{p.repeat={type:'monthly',dom:+m[1],interval:1}});
+  if(!p.repeat)cut(/\b(monthly|every month|each month)\b/i,()=>{p.repeat={type:'monthly',dom:dateOf(today).getDate(),interval:1}});
+  if(!p.repeat)cut(/\b(every ?day|daily|each day|every night|nightly)\b/i,()=>{p.repeat={type:'weekly',days:[0,1,2,3,4,5,6],interval:1}});
+  if(!p.repeat)cut(/\b(?:every |on )?weekdays?\b/i,()=>{p.repeat={type:'weekly',days:[1,2,3,4,5],interval:1}});
+  if(!p.repeat)cut(/\b(?:every |on )?weekends?\b/i,()=>{p.repeat={type:'weekly',days:[0,6],interval:1}});
+  if(!p.repeat)cut(new RegExp('\\bevery other ('+DOWRX+'|week)\\b','i'),m=>{p.repeat={type:'weekly',days:[m[1].toLowerCase()==='week'?dow(today):dowOf(m[1])],interval:2}});
+  if(!p.repeat)cut(/\b(weekly|every week|each week)\b/i,()=>{p.repeat={type:'weekly',days:[dow(today)],interval:1}});
+  if(!p.repeat)cut(new RegExp('\\b(every|each|on)?\\s*('+DOWRX+'(?:\\s*(?:,|and|&|\\/)\\s*'+DOWRX+')*)\\b','i'),m=>{
+    const days=[...m[2].matchAll(new RegExp(DOWRX,'gi'))].map(x=>dowOf(x[0]));
+    const plural=/(day)s\b/i.test(m[2]);
+    if((m[1]&&/every|each/i.test(m[1]))||plural||days.length>1)p.repeat={type:'weekly',days:[...new Set(days)],interval:1};
+    else{for(let d=today;d<today+8;d++)if(dow(d)===days[0]){p.due=d;break}}
+  });
+  cut(/\bat (\d{1,2})(?::(\d\d))?\s*(am|pm|a|p)?\b/i,m=>{let h=+m[1];const mm=+(m[2]||0),ap=(m[3]||'').toLowerCase();
+    if(ap.startsWith('p')&&h<12)h+=12;if(ap.startsWith('a')&&h===12)h=0;if(!ap&&h<7)h+=12;p.at=h*60+mm});
+  cut(/\b(?:in the )?(morning|afternoon|evening|tonight|night|after school|before school|after dinner|before bed)\b/i,m=>{
+    const w=m[1].toLowerCase();p.at=p.at??({morning:480,afternoon:840,evening:1140,tonight:1170,night:1170,'after school':960,'before school':420,'after dinner':1170,'before bed':1260})[w];
+    if(w==='tonight'&&p.due==null&&!p.repeat)p.due=today});
+  cut(/\btoday\b/i,()=>{if(p.due==null&&!p.repeat)p.due=today});
+  cut(/\btomorrow\b/i,()=>{if(p.due==null&&!p.repeat)p.due=today+1});
+  let t=s.replace(/\s+/g,' ').trim().replace(/^(to|please)\s+/i,'').replace(/[.,;:!]+$/,'');
+  if(p.kind==='moment')t=t.replace(/^(she|he) is\b/i,'You are').replace(/^(she|he)'s\b/i,'You\u2019re').replace(/^(she|he) (\w+?)(e?s)\b/i,(m,a,v,e)=>'You '+v+(e==='es'&&/(sh|ch|ss|x|o)$/.test(v)?'':e==='es'?'e':'')).replace(/^(she|he)\b/i,'You');
+  p.title=t?t[0].toUpperCase()+t.slice(1):'';
+  if(!p.kind)p.kind=(p.who==='__kids'||p.repeat||(CHORE_RX.test(p.title)&&KIDS.includes(p.who)))?'chore':'task';
+  return p;
+}
+let qp=null;
+const WHO_CYCLE=['__me','Ashley','Myla','Kuhlly','__kids','Shelie','Cindy','Kyle'];
+const REP_CYCLE=[null,'daily','weekdays','weekly','other','monthly'];
+const AT_CYCLE=[null,480,960,1140];
+function repFromKey(k){const t=nowDay();return k==='daily'?{type:'weekly',days:[0,1,2,3,4,5,6],interval:1}:k==='weekdays'?{type:'weekly',days:[1,2,3,4,5],interval:1}
+  :k==='weekly'?{type:'weekly',days:[dow(t)],interval:1}:k==='other'?{type:'weekly',days:[dow(t)],interval:2}:k==='monthly'?{type:'monthly',dom:dateOf(t).getDate(),interval:1}:null}
+function repKey(r){if(!r)return null;if(r.type==='monthly')return'monthly';const k=r.days.slice().sort().join();return k==='0,1,2,3,4,5,6'?'daily':k==='1,2,3,4,5'?'weekdays':r.interval>1?'other':'weekly'}
+const whoName=w=>w==='__me'?viewer:w==='__kids'?'Kids (deal)':w;
+function renderPreview(){
+  const box=$('qprev');
+  if(!qp||!qp.title){box.hidden=true;return}
+  box.hidden=false;
+  const kind=qp.kind,holder=whoName(qp.who),rep=qp.repeat?{...qp.repeat,at:qp.at}:null;
+  const meta=kind==='moment'?'':`<div class="meta"><span class="tag">${kind==='chore'?'Chore':'Task'}</span><span>${esc(holder)}</span></div>`;
+  const foot=kind==='moment'?'💌 For '+esc(holder):rep?'🔁 '+esc(repLabel(rep)):qp.due!=null?'📌 Due '+(qp.due===nowDay()?'today':qp.due===nowDay()+1?'tomorrow':dayName(qp.due)):'~'+guessMins(qp.title)+' min';
+  const whenTxt=qp.at!=null?timeWord(qp.at):'Anytime';
+  box.innerHTML=`<div class="mcard"><div class="card ${kind}" data-kind="${kind}"><div class="face">${meta}<h2>${esc(qp.title)}</h2><div class="next"><span>${foot}</span></div></div></div></div>
+    <div class="qchips">
+      <button type="button" data-c="kind"><b>Kind</b>${kind==='chore'?'Chore 🔁':kind==='moment'?'Moment 💌':'Task'}</button>
+      <button type="button" data-c="who"><b>For</b>${esc(holder)}</button>
+      ${kind!=='moment'?`<button type="button" data-c="rep"><b>Repeat</b>${rep?esc(repLabel({...rep,at:null})):'Once'}</button>
+      <button type="button" data-c="at"><b>When</b>${esc(whenTxt)}</button>`:''}
+    </div>
+    <div class="qhint">Press enter or Add. Tap a chip to change it.</div>`;
+  applyShapes(box);
+  box.querySelectorAll('.qchips button').forEach(b=>b.onclick=()=>{
+    const c=b.dataset.c;
+    if(c==='kind')qp.kind={task:'chore',chore:'moment',moment:'task'}[qp.kind];
+    if(c==='who')qp.who=WHO_CYCLE[(WHO_CYCLE.indexOf(qp.who)+1)%WHO_CYCLE.length];
+    if(c==='rep'){const i=REP_CYCLE.indexOf(repKey(qp.repeat));qp.repeat=repFromKey(REP_CYCLE[(i+1)%REP_CYCLE.length]);if(qp.repeat&&qp.kind==='task')qp.kind='chore'}
+    if(c==='at')qp.at=AT_CYCLE[(AT_CYCLE.indexOf(qp.at)+1)%AT_CYCLE.length];
+    renderPreview();
+  });
+}
+$('qaIn').addEventListener('input',e=>{const v=e.target.value;if(!v.trim()){qp=null;renderPreview();return}
+  const keep=qp;qp=parseLine(v);renderPreview()});
+$('qa').addEventListener('submit',e=>{e.preventDefault();if(!qp||!qp.title||busy)return;createFrom(qp);$('qaIn').value='';qp=null;renderPreview()});
+function createFrom(p){
+  const holder=p.who==='__me'?viewer:p.who,today=nowDay();
+  if(p.who==='__kids'){
+    const rep={...(p.repeat||{type:'weekly',days:[0,1,2,3,4,5,6],interval:1}),start:today};
+    const ch={id:'p'+(++seq),t:p.title,mins:guessMins(p.title),rep};pool.push(ch);
+    addLog('var(--do)',`🎲 Added “${p.title}” to the kids’ chore deal · ${repLabel(rep)}`);
+    if(dealt[today]&&occursOn(rep,today)){const kids=KIDS.filter(k=>!isOut(k,today));if(kids.length){const load={},count={};kids.forEach(k=>{load[k]=cards.filter(c=>c.dealt===today&&c.holder===k).reduce((a,c)=>a+c.mins,0);count[k]=0});assign([ch],today,kids,load,count)}}
+    say(`Added to the chore deal. ${repLabel(rep)}.`,'info');render();return;
+  }
+  if(p.kind==='moment'){
+    const c=mk({t:p.title,kind:'moment',maker:viewer,holder,mins:0});cards.push(c);
+    if(holder!==viewer){addLog('var(--pink)',`💌 ${viewer} sent ${holder} a moment`);say(`Sent to ${holder} 💌`,'info')}else fresh.add(c.id);
+    render();return;
+  }
+  const isKid=KIDS.includes(holder);
+  const c=mk({t:p.title,kind:p.kind,tag:p.kind==='chore'?'Chore':'New',maker:viewer,holder,proof:p.kind==='chore'&&isKid,due:p.due,handedAt:holder!==viewer?now:null,src:'quick add'});
+  if(holder!==viewer)assignTo(c,holder,'person','sent');
+  if(p.kind==='chore'&&p.repeat){
+    c.repeat={...p.repeat,at:p.at??(isKid?960:1140),start:today};
+    const d=nextOcc(c.repeat,today);
+    if(!(d===today&&c.repeat.at<=tod()))c.slot={day:d,start:c.repeat.at};
+  }else if(p.at!=null){
+    const d=p.due??(p.at>tod()?today:today+1);c.slot={day:d,start:p.at};if(c.due==null)c.due=d;
+  }
+  cards.push(c);if(!c.slot)fresh.add(c.id);
+  const where=c.slot?slotWords(c.slot).line.replace('Back','Shows up'):holder!==viewer?`Sent to ${holder}’s deck`:`It’s #${deckOf(viewer).indexOf(c)+1} in the deck`;
+  addLog(holder!==viewer?'var(--team)':'var(--text)',holder!==viewer?`${viewer} gave ${holder} “${c.t}”${c.repeat?' · 🔁 '+repLabel(c.repeat):''}`:`${viewer} added “${c.t}”${c.repeat?' · 🔁 '+repLabel(c.repeat):''}`);
+  say(`Added. ${where}.`,'info');render();
+}
+const EXAMPLES=['Kuhlly sweep kitchen Tue and Fri','Pay water bill by the 20th','Kids: feed the fish every day','Tell Ashley she looks great tonight','Change smoke detector batteries every 6 months','Trash every Thursday night'];
+let exI=0;setInterval(()=>{if(document.activeElement!==$('qaIn')&&!$('qaIn').value){exI=(exI+1)%EXAMPLES.length;$('qaIn').placeholder=`Add a card… “${EXAMPLES[exI]}”`}},3500);
+$('qaIn').placeholder=`Add a card… “${EXAMPLES[0]}”`;
+
+/* ---------- Gestures ---------- */
+function bind(card,c){
+  let s=null;
+  const sd=card.querySelector('.stamp.do');
+  const ph=card._ph={a:0,x:0,y:0,rx:0,va:0,vx:0,vy:0,vrx:0,ta:0,tx:0,ty:0,trx:0,raf:0};
+  const kick=()=>{
+    if(ph.raf)return;
+    const tick=()=>{
+      if(card._flying){ph.raf=0;return}
+      for(const q of AX){ph['v'+q]=(ph['v'+q]+(ph['t'+q]-ph[q])*.14)*DAMP;ph[q]+=ph['v'+q]}
+      const g=s?s.g:geo();
+      paint(card,{x:ph.x,y:ph.y,a:ph.a,rx:ph.rx,clip:ph.y>0?slotClip(g,ph.y):0});
+      const still=!s&&AX.every(q=>!ph['t'+q]&&Math.abs(ph[q])<.08&&Math.abs(ph['v'+q])<.08);
+      if(still){ph.raf=0;card.style.transform='';card.style.transformOrigin='';card.style.clipPath='';return}
+      ph.raf=requestAnimationFrame(tick);
+    };
+    ph.raf=requestAnimationFrame(tick);
+  };
+  card._settle=()=>{for(const q of AX)ph['t'+q]=0;sd.style.opacity=0;kick()};
+  card.addEventListener('pointerdown',e=>{
+    if(busy)return;
+    card.setPointerCapture(e.pointerId);
+    s={x:e.clientX,y:e.clientY,mode:'pending',dx:0,dy:0,person:-1,g:geo()};
+    card.classList.add('dragging');
+  });
+  card.addEventListener('pointermove',e=>{
+    if(!s)return;
+    s.dx=e.clientX-s.x;s.dy=e.clientY-s.y;
+    if(s.mode==='pending'&&Math.hypot(s.dx,s.dy)>10){
+      if(Math.abs(s.dx)>=Math.abs(s.dy)){
+        s.mode='swipe';
+        if(c.kind==='moment')whenEl.innerHTML=`<div class="when soft"><span class="e">💌</span><div>Bottom of the pile<small>No stamps for moments</small></div></div>`;
+        else if(c.dealt!=null)whenEl.innerHTML=`<div class="when"><span class="e">🎲</span><div>Later tonight<small>Still today’s chore</small></div></div>`;
+        else if(c.stamps.length>=DECIDE_AT)whenEl.innerHTML=`<div class="when"><span class="e">✋</span><div>Put off ${c.stamps.length}×<small>Time to decide</small></div></div>`;
+        else if(!c.nudged&&fitsNow(c,viewer))whenEl.innerHTML=`<div class="when fit"><span class="e">🎯</span><div>This fits right now<small>~${c.mins} min, you’re free</small></div></div>`;
+        else{const w=slotWords(findSlot(c,viewer));whenEl.innerHTML=`<div class="when"><span class="e">${w.e}</span><div>${esc(w.phrase)}<small>${esc(w.day)}</small></div></div>`}
+      }else{s.mode='vert';card.classList.add('held');stage.classList.add('holding')}
+    }
+    if(s.mode==='swipe'){
+      ph.tx=s.dx*.35;ph.ta=clamp(s.dx*.22,-50,50);
+      sd.style.opacity=clamp(-s.dx/110,0,1);
+      stage.classList.toggle('show-when',s.dx>50);
+      kick();
+    }else if(s.mode==='vert'){
+      const dy=s.dy;
+      card.classList.toggle('down',dy>0);
+      stage.classList.toggle('show-picker',dy<-25);
+      stage.classList.toggle('show-dock',dy>25&&c.kind!=='moment');
+      slot.classList.toggle('open',dy>80&&c.kind!=='moment');
+      s.person=-1;
+      if(dy<0){
+        ph.ty=dy*.55;ph.trx=0;
+        if(dy<-25){const r=picker.getBoundingClientRect();s.person=clamp(Math.floor((e.clientX-r.left)/(r.width/others.length)),0,others.length-1)}
+        const cc=s.person>=0&&dy<-40?chipCenter(s.person):null;
+        ph.tx=0;ph.ta=cc?clamp((cc.x-s.g.P.x)*.09,-22,22):0;
+      }else{ph.tx=0;ph.ta=0;ph.ty=c.kind==='moment'?Math.min(dy*.25,40):dy*.6;ph.trx=c.kind==='moment'?0:-clamp(dy*.18,0,28)}
+      chips.forEach((el,k)=>el.classList.toggle('on',k===s.person&&dy<-60));
+      kick();
+    }
+  });
+  const end=()=>{
+    if(!s)return;
+    const st=s;s=null;
+    card.classList.remove('dragging');stage.classList.remove('holding','show-picker','show-dock','show-when');
+    chips.forEach(el=>el.classList.remove('on'));slot.classList.remove('open');
+    if(st.mode==='swipe'&&st.dx<-110){card._settle();return openWork(card,c)}
+    if(st.mode==='swipe'&&st.dx>110)return notNow(card,c);
+    if(st.mode==='vert'&&st.dy<-80&&st.person>=0)return commit(card,c,'team',others[st.person].n);
+    if(st.mode==='vert'&&st.dy>80){
+      if(c.kind==='moment'){card.classList.remove('held','down');card._settle();return say('Moments are for people, not agents 💌','info')}
+      return commit(card,c,'agent');
+    }
+    card.classList.remove('held','down');
+    card._settle();
+  };
+  card.addEventListener('pointerup',end);
+  card.addEventListener('pointercancel',end);
+}
+function notNow(card,c){
+  if(c.kind==='moment'||c.dealt!=null)return commit(card,c,'bottom');
+  if(c.stamps.length>=DECIDE_AT){card._settle&&card._settle();return openDecide(card,c)}
+  if(!c.nudged&&fitsNow(c,viewer)){
+    c.nudged=true;card._settle&&card._settle();busy=true;
+    $('nudgeT').textContent=`This fits right now 🎯 ~${c.mins} min`;
+    $('nudgeS').textContent=`You’re free until ${fmt(freeUntil(viewer))}.`;
+    nudge.hidden=false;
+    $('nDo').onclick=()=>{nudge.hidden=true;busy=false;openWork(card,c)};
+    $('nLater').onclick=()=>{nudge.hidden=true;busy=false;commit(card,c,'later')};
+    return;
+  }
+  commit(card,c,'later');
+}
+
+/* ---------- Outcomes ---------- */
+function flyRight(card,ph,done){tween(650,p=>{const e=p*(.55+.45*p);paint(card,{x:lerp(ph.x,window.innerWidth*1.3,e),a:lerp(ph.a,140,e),op:p>.6?1-(p-.6)/.4:1})},done)}
+const UNDO_LABEL=(c,a,arg)=>({done:`Done: ${c.t}`,accept:`Accepted: ${c.t}`,later:`Put off: ${c.t}`,team:`Handed to ${arg}: ${c.t}`,agent:`${c.probe&&viewer===CLOUD.me&&agentConnected()?'Sent to':'Parked for'} ${agentOf(viewer)}: ${c.t}`,drop:`Let go: ${c.t}`,bottom:`To the bottom: ${c.t}`})[a]||c.t;
+function commit(card,c,a,arg){
+  snapUndo(c,a,UNDO_LABEL(c,a,arg));
+  busy=true;card._flying=true;
+  const ph=card._ph||{a:0,x:0,y:0,rx:0};
+  if(ph.raf)cancelAnimationFrame(ph.raf);
+  card.classList.remove('held','down');
+  const g=geo(),me=viewer;
+  const finish=()=>{busy=false;render();showUndo()};
+
+  if(a==='bottom'){cards.splice(cards.indexOf(c),1);cards.push(c);c.born=now;flyRight(card,ph,finish);return}
+  if(a==='later'){
+    const sl=findSlot(c,me),w=slotWords(sl);
+    c.slot=sl;c.status='snoozed';c.stamps.push(w.e);c.nudged=false;touch(c);
+    addLog('var(--later)',`${me} put off “${c.t}”. ${w.line}.`);
+    say(`Got it. ${w.line}.`,'info');
+    flyRight(card,ph,finish);
+    return;
+  }
+  if(a==='team'){
+    const to=arg,k=others.findIndex(p=>p.n===to);
+    const back=to===c.maker&&me!==c.maker;
+    const cur=openAsg(c),tm=asgTo(c,me);
+    if(c.kind!=='moment'){
+      if(tm&&tm.by===to)setState(tm,'declined');                                  // sent back unfinished
+      else if(isReturned(c)&&cur.to===to){setState(cur,'reopened');assignTo(c,to,'person','sent',me)} // "not quite", back to the same person
+      else assignTo(c,to,'person','sent',me);
+    }
+    c.holder=to;c.sentBack=back?me:null;c.slot=null;c.nudged=false;c.nudge=null;c.handedAt=now;touch(c);fresh.add(c.id);stat(me,'handed');
+    if(c.kind==='chore'&&KIDS.includes(to))c.proof=true;
+    addLog(isPrivate(c)?'var(--pink)':'var(--team)',isPrivate(c)?`💌 ${me} sent ${to} a moment`:back?`${me} sent “${c.t}” back to ${to}`:`${me} handed “${c.t}” to ${to}`);
+    stage.classList.add('show-picker');chips[k].classList.add('on');
+    const cc=chipCenter(k),T={x:cc.x-g.P.x,y:cc.y-g.P.y},side=T.x>=0?1:-1;
+    tween(580,p=>{const e=1-Math.pow(1-p,2);
+      paint(card,{x:lerp(ph.x,T.x,e),y:lerp(ph.y,T.y,e)-70*Math.sin(Math.PI*p),a:lerp(ph.a,ph.a+side*30,e),s:lerp(1,.07,easeIn(p)),op:p>.85?1-(p-.85)/.15:1})},
+      ()=>{chips[k].classList.add('catch');setTimeout(()=>{stage.classList.remove('show-picker')},550);finish()});
+    return;
+  }
+  if(a==='agent'){
+    // Stage 1: the handshake probe really goes to Grok Bot when signed in. Any other card is parked as an
+    // assignment marked "not sent" (nothing is simulated), until later stages wire up real tasks.
+    const ag=agentOf(me),live=!!c.probe&&me===CLOUD.me&&agentConnected();
+    c.holder='agent:'+me;c.slot=null;c.nudged=false;const asg=assignTo(c,ag,'agent','not_sent',me);
+    if(live){c.cloud=Object.assign(c.cloud||{},{sending:true,error:null});addLog('var(--agent)',`${me} is sending “${c.t}” to ${ag}…`)}
+    else addLog('var(--agent)',me===CLOUD.me&&agentConnected()?`${me} parked “${c.t}” for ${ag} · not sent (only the handshake probe is wired up yet)`:`${me} parked “${c.t}” for ${ag} · not sent, ${ag} isn’t connected`);
+    stage.classList.add('show-dock');slot.classList.add('open');
+    const Y=g.slotY-g.r.top+12;
+    tween(520,p=>{const y=lerp(ph.y,Y,easeIn(p));paint(card,{x:lerp(ph.x,0,p),y,a:lerp(ph.a,0,p),rx:lerp(ph.rx,-10,p),clip:slotClip(g,y)})},
+      ()=>{slot.classList.remove('open');finish();
+        say(live?`Sending to ${ag}…`:me===CLOUD.me&&agentConnected()?`Parked for ${ag}. Not sent: only the handshake probe is wired up yet.`:`Parked for ${ag}. Not sent — ${ag} isn’t connected. It’s in Waiting on.`,'info');
+        if(live)cloudSend(c,asg);
+        setTimeout(()=>stage.classList.remove('show-dock'),1600)});
+    return;
+  }
+  if(a==='drop'){
+    {const cur=openAsg(c);if(cur)setState(cur,'cancelled')}
+    archiveCard(c,'dropped');
+    addLog('var(--muted)',`${me} let go of “${c.t}”`);
+    tween(560,p=>paint(card,{y:lerp(0,260,easeIn(p)),a:lerp(0,-18,p),s:lerp(1,.85,p),op:1-p}),finish);
+    return;
+  }
+  if(a==='done'||a==='accept'){
+    const cur=openAsg(c),tm=asgTo(c,me),mine=!!tm&&tm.kind==='person'&&tm.by!==me&&PEOPLE.some(p=>p.n===tm.by);
+    if(a==='accept'){setState(cur,'accepted');stat(me,'closed')}
+    if(mine){
+      // Done by the assignee = returned for review. The same card goes back to whoever asked; it isn't finished until they accept.
+      setState(tm,'returned');c.asg.push(c.asg.splice(c.asg.indexOf(tm),1)[0]);c.holder=tm.by;c.doneBy=me;c.sentBack=null;c.nudge=null;c.handedAt=now;touch(c);fresh.add(c.id);
+    }else archiveCard(c,c.review?'done':'done');
+    const n=c.kind==='moment'||c.review||a==='accept'?0:stat(me,'done').done;
+    if(!c.review&&c.plan&&c.plan.day===nowDay()&&tod()<c.plan.start)stat(me,'ahead'); // finished before its planned time
+    if(c.review){
+      cards=cards.filter(x=>x.group!==c.group);
+      ledger.forEach(l=>{if(l.grp===c.group)l.ok=true}); // points count once a parent approves
+      addLog('var(--do)',`👍 ${me} gave ${c.doneBy} a thumbs-up for “${c.t}”`);
+      say(`Thumbs-up sent to ${c.doneBy} 👍`,'info');
+    }else if(c.kind==='moment'){
+      if(c.maker!==me){const r=mk({kind:'moment',t:`${me} got your note 💌`,maker:me,holder:c.maker,mins:0,note:c.t});cards.push(r);fresh.add(r.id)}
+      addLog('var(--pink)',`💌 A moment between ${me} and ${c.maker}`);
+      say('Sent with love 💌','info');
+    }else if(c.kind==='chore'&&KIDS.includes(me)&&!mine){
+      const grp='g'+(++seq);
+      ledger.push({who:me,t:c.t,mins:c.mins,day:nowDay(),grp,ok:false});
+      PARENTS.forEach(par=>{const r=mk({type:'return',review:true,group:grp,kind:'chore',doneBy:me,t:c.t,tag:'Chore',maker:me,holder:par,mins:1,rule:'anytime',
+        note:arg&&arg.photo?'Photo sent. Whoever gets to it first decides.':'Marked done.'});cards.push(r);fresh.add(r.id)});
+      addLog('var(--do)',`${me} finished “${c.t}”${arg&&arg.photo?' 📸':''} · waiting on a parent’s thumbs-up`);
+    }else if(mine){
+      addLog('var(--do)',`${me} finished “${c.t}” · back to ${tm.by} for review`);
+      say(`Done. Sent back to ${tm.by} to review.`,'info');
+    }else if(a==='accept'){
+      addLog('var(--do)',`✓ ${me} accepted ${cur.to}’s “${c.t}”`);say(`Accepted. Loop closed with ${cur.to} ✓`,'info');
+    }else addLog('var(--do)',`${me} finished “${c.t}”`);
+    if(c.repeat&&c.dealt==null&&!mine){
+      const d=nextOcc(c.repeat,nowDay()+1);
+      const nx=mk({...c,id:uid(),asg:[],status:'snoozed',version:1,stamps:[],nudge:null,slot:{day:d,start:c.repeat.at??1140},born:now,handedAt:c.maker!==c.holder?now:null,sentBack:null,nudged:false,
+        items:c.items?c.items.map(i=>({t:i.t,done:false})):null});
+      cards.push(nx);
+      addLog('var(--do)',`🔁 Next “${c.t}”: ${dayName(d)}${d-nowDay()>6?', '+dateOf(d).toLocaleDateString([],{month:'short',day:'numeric'}):''}`);
+    }
+    if(!c.review&&c.kind!=='moment'&&!mine&&a!=='accept'){
+      if(!deckOf(me).length){say('All clear. Enjoy the quiet. 🎉','clear');burst()}
+      else if(c.stamps.length>=2)say('Finally off the deck. Nice.','finish');
+      else if([3,5,8].includes(n))say(`That’s ${n} done ${tod()<720?'before lunch':'today'}.`,'milestone');
+      else if(c.repeat&&c.dealt==null)say(`Done. Next one ${dayName(nextOcc(c.repeat,nowDay()+1))}.`,'info');
+    }
+    const sd=card.querySelector('.stamp.done');
+    sd.animate([{opacity:0,transform:'translateX(-50%) rotate(-6deg) scale(2.6)'},{opacity:1,transform:'translateX(-50%) rotate(-6deg) scale(1)'}],{duration:240,easing:'cubic-bezier(.2,.8,.3,1.3)',fill:'forwards'});
+    setTimeout(()=>tween(480,p=>{const s=p<.35?lerp(1,1.07,easeOut(p/.35)):lerp(1.07,.2,easeIn((p-.35)/.65));
+      paint(card,{y:p<.35?0:lerp(0,-120,easeIn((p-.35)/.65)),s,op:p<.5?1:1-(p-.5)/.5})},finish),360);
+  }
+}
+
+/* ---------- Do it: workspace with a quick path ---------- */
+function quickPath(c){
+  const q=c.qp?QP[c.qp]:null,et=errandTip(c,viewer);if(isReturned(c))return '';
+  if(!q&&!et)return '';
+  const links=(q&&q.links||[]).map(l=>`<a class="qlink" href="${esc(l.url)}" target="_blank" rel="noopener noreferrer"><span>${esc(l.label)}<small>${esc(l.note)}</small></span><span aria-hidden="true">↗</span></a>`).join('');
+  const ready=q&&q.ready?`<div><div class="sub" style="margin-bottom:5px">Have ready</div><div class="qready">${q.ready.map(r=>`<span>${esc(r)}</span>`).join('')}</div></div>`:'';
+  const tips=[et,...(q&&q.tips||[])].filter(Boolean).map(t=>`<div class="qtip"><span>💡</span><span>${esc(t)}</span></div>`).join('');
+  const ag=q&&q.agent?`<button type="button" class="qagent" id="qAgent">🤖 Park for ${esc(agentOf(viewer))} to ${esc(q.agent)}<small style="display:block;font-weight:500;color:var(--ink-soft)">${viewer===CLOUD.me&&agentConnected()?'Not sent yet: only the handshake probe is wired up in this stage':`Not connected yet: it waits, unsent, until ${esc(agentOf(viewer))} is`}</small></button>`:'';
+  return `<div class="qp"><div class="qph">⚡ Quick path</div>${links}${ready}${tips}${ag}</div>`;
+}
+function openWork(card,c){
+  busy=true;
+  overlay.className=`overlay ${c.kind}`;
+  if(c.kind==='moment'){
+    overlay.innerHTML=`<div class="sub">${c.maker!==viewer?`From ${esc(c.maker)} · just for you`:'Moment'}</div>
+      <h2>${esc(c.t)}</h2>${c.note?`<p>${esc(c.note)}</p>`:''}
+      <div class="actions"><button type="button" class="primary" id="wDone">💌 Got it</button><button type="button" class="quiet" id="wClose">Not now</button></div>`;
+    overlay.hidden=false;
+    $('wDone').onclick=()=>{overlay.hidden=true;busy=false;commit(card,c,'done')};
+    $('wClose').onclick=()=>{overlay.hidden=true;busy=false;render()};
+    return;
+  }
+  if(c.review){
+    overlay.innerHTML=`<div class="sub">Chore check · from ${esc(c.doneBy)}</div><h2>${esc(c.t)}</h2>
+      <p>${esc(c.doneBy)} says it’s done. ${esc(c.note)}</p>
+      <div class="actions"><button type="button" class="primary" id="wDone">👍 Thumbs-up</button><button type="button" class="quiet" id="wClose">Later</button></div>`;
+    overlay.hidden=false;
+    $('wDone').onclick=()=>{overlay.hidden=true;busy=false;commit(card,c,'done')};
+    $('wClose').onclick=()=>{overlay.hidden=true;busy=false;render()};
+    return;
+  }
+  const ret=isReturned(c),cur=curAsg(c),cloud=ret&&!!cur.cloudId;   // cloud: returned by Grok Bot; the server holds the result
+  const tmw=asgTo(c,viewer);
+  const from=!ret&&c.type==='task'&&c.dealt==null&&(tmw&&tmw.by!==viewer?tmw.by:c.maker!==viewer&&PEOPLE.some(p=>p.n===c.maker)?c.maker:null);
+  const draw=()=>{
+    overlay.innerHTML=`<div class="sub">${esc(c.tag||'Task')} · ~${c.mins} min${c.repeat?' · 🔁 '+esc(repLabel(c.repeat)):''}${c.dealt!=null?' · 🎲 today’s deal':''}${from?` · from ${esc(from)}`:''}${ret?` · done by ${esc(cur.to)}`:''}</div>${ret||c.review?'':`<button type="button" class="editbtn" id="wEdit" aria-label="Edit this card">✎ Edit</button>`}
+      <h2>${esc(c.t)}</h2>${c.note&&!cloud?`<p>${esc(c.note)}</p>`:''}
+      ${cloud?cloudReview(c):quickPath(c)}
+      ${c.items?`<ul class="check">${c.items.map((it,k)=>`<li class="${it.done?'x':''}"><button type="button" data-k="${k}"><span class="box">${it.done?'✓':''}</span><span class="t">${esc(it.t)}</span></button></li>`).join('')}</ul>
+        <form class="add" id="addForm"><input id="addItem" placeholder="Add an item" autocomplete="off"><button type="submit" class="pbtn">Add</button></form>`
+        :c.next&&!c.qp&&!ret?`<p>Next step: <b style="color:var(--ink)">${esc(c.next)}</b></p>`:''}
+      <div class="actions">
+        ${ret?`<button type="button" class="primary" id="wAccept">Accept ✓</button>${cloud?'':`<button type="button" class="warn" id="wAgain">Not quite: back to ${esc(cur.to)}</button>`}`
+          :`<button type="button" class="primary" id="wDone">${c.proof?'Done 📸':'Done ✓'}</button>`}
+        ${from?`<button type="button" class="warn" id="wBack">Send it back to ${esc(from)}</button>`:''}
+        <button type="button" class="quiet" id="wClose">Not now</button>
+      </div>`;
+    overlay.querySelectorAll('.check button').forEach(b=>b.onclick=()=>{const it=c.items[+b.dataset.k];it.done=!it.done;touch(c);draw()});
+    const we=$('wEdit');if(we)we.onclick=()=>openEdit(c,draw);wsRedraw=draw;
+    const f=$('addForm');if(f)f.onsubmit=e=>{e.preventDefault();const v=$('addItem').value.trim();if(v){c.items.push({t:v,done:false});draw();$('addItem').focus()}};
+    const qa=$('qAgent');if(qa)qa.onclick=()=>{overlay.hidden=true;busy=false;commit(card,c,'agent')};
+    if(ret){$('wAccept').onclick=async()=>{
+        if(cloud){ // the server's acceptance is the real one; the local card follows it
+          const b=$('wAccept');b.disabled=true;b.textContent='Accepting…';
+          try{const r=await cloudOp('accept',{assignment_id:cur.cloudId,expected_version:c.cloud&&c.cloud.version});if(c.cloud){c.cloud.state='accepted';c.cloud.version=(r.assignment&&r.assignment.version)||c.cloud.version}}
+          catch(e){const code=e.body&&e.body.error;
+            if(code==='version_conflict'||code==='not_returned'){try{await syncProbe()}catch(x){}if(isReturned(c)){draw();toast('It changed on the server. Take another look.')}else{overlay.hidden=true;busy=false;render();toast('It changed on the server.')}return}
+            b.disabled=false;b.textContent='Accept ✓';toast(e.message==='sign_in_required'?'Signed out. Sign in again.':'Couldn’t reach the server. Try again.');return}
+        }
+        overlay.hidden=true;busy=false;commit(card,c,'accept');if(cloud)undoRec=null; // accepted on the server: not undoable here
+      };
+      const wa=$('wAgain');if(wa)wa.onclick=()=>{overlay.hidden=true;busy=false;commit(card,c,'team',cur.to)}}
+    else $('wDone').onclick=()=>{if(c.proof)return proveIt(card,c);overlay.hidden=true;busy=false;commit(card,c,'done')};
+    if(from)$('wBack').onclick=()=>{overlay.hidden=true;busy=false;commit(card,c,'team',from)};
+    $('wClose').onclick=()=>{overlay.hidden=true;busy=false;render()};
+  };
+  draw();overlay.hidden=false;
+}
+/* Edit: change what the card says and when it's possible. One sheet, opened from the workspace. */
+const MIN_OPTS=[5,10,15,20,30,45,60,90];
+function openEdit(c,back){
+  const t=nowDay(),moment=c.kind==='moment';
+  const dueOpts=[['','No due date'],...Array.from({length:14},(_,k)=>[String(t+k),k===0?'Today':k===1?'Tomorrow':dayName(t+k)+' '+dateOf(t+k).toLocaleDateString([],{month:'short',day:'numeric'})])];
+  if(c.due!=null&&(c.due<t||c.due>=t+14))dueOpts.splice(1,0,[String(c.due),c.due<t?'Overdue: '+dayName(c.due):dateOf(c.due).toLocaleDateString()]);
+  const rk=repKey(c.repeat)||'',repOpts=[['','Once'],['daily','Every day'],['weekdays','Weekdays'],['weekly',`Every ${DOW_NAMES[dow(t)]}`],['other',`Every other ${DOW_NAMES[dow(t)]}`],['monthly',`The ${dateOf(t).getDate()}${'th'} of each month`]];
+  let mins=c.mins,rule=c.rule,kind=c.kind;
+  let draw=()=>{
+    overlay.innerHTML=`<div class="sub">Edit card</div><form class="ef" id="ef" autocomplete="off">
+      <label>Title<input id="eT" value="${esc(c.t)}" required maxlength="120"></label>
+      <label>Note<textarea id="eN" maxlength="500">${esc(c.note||'')}</textarea></label>
+      ${moment?'':`<div class="ef"><label style="margin:0">About how long</label><div class="pills" id="eM">${MIN_OPTS.map(m=>`<button type="button" data-m="${m}" aria-pressed="${m===mins}">${m<60?m+' min':m/60+' hr'}</button>`).join('')}</div></div>
+      <div class="row2"><label>Due<select id="eD">${dueOpts.map(([v,l])=>`<option value="${v}"${v===(c.due==null?'':String(c.due))?' selected':''}>${esc(l)}</option>`).join('')}</select></label>
+        <label>Repeats<select id="eR">${repOpts.map(([v,l])=>`<option value="${v}"${v===rk?' selected':''}>${esc(l)}</option>`).join('')}</select></label></div>
+      <div class="ef"><label style="margin:0">When it’s possible</label><div class="pills" id="eW">${Object.entries(RULES).map(([k,r])=>`<button type="button" data-w="${k}" aria-pressed="${k===rule}">${esc(r.lbl)}</button>`).join('')}</div></div>
+      <div class="ef"><label style="margin:0">Kind</label><div class="pills" id="eK">${[['task','Task'],['chore','Chore 🔁']].map(([k,l])=>`<button type="button" data-k="${k}" aria-pressed="${k===kind}">${l}</button>`).join('')}</div></div>`}
+      <div class="actions"><button type="submit" class="primary">Save</button><button type="button" class="quiet" id="eX">Cancel</button></div></form>`;
+    overlay.querySelectorAll('#eM button').forEach(b=>b.onclick=()=>{mins=+b.dataset.m;keep();draw()});
+    overlay.querySelectorAll('#eW button').forEach(b=>b.onclick=()=>{rule=b.dataset.w;keep();draw()});
+    overlay.querySelectorAll('#eK button').forEach(b=>b.onclick=()=>{kind=b.dataset.k;keep();draw()});
+    $('eX').onclick=back;
+    $('ef').onsubmit=e=>{e.preventDefault();saveEdit()};
+    $('eT').focus();
+  };
+  // keep typed text when a pill redraws the form
+  let draft=null;const keep=()=>{draft={t:$('eT').value,n:$('eN').value,d:$('eD')?.value,r:$('eR')?.value}};
+  const origDraw=draw;
+  const drawKeep=()=>{origDraw();if(draft){$('eT').value=draft.t;$('eN').value=draft.n;if($('eD'))$('eD').value=draft.d;if($('eR'))$('eR').value=draft.r}};
+  const saveEdit=()=>{
+    const title=$('eT').value.trim();if(!title){$('eT').focus();return}
+    snapUndo(c,'edit','Edited: '+title);
+    c.t=title;c.note=$('eN').value.trim();
+    if(!moment){
+      c.mins=mins;c.rule=rule;c.kind=kind;c.tag=kind==='chore'?'Chore':(c.tag==='Chore'?'Task':c.tag);
+      const d=$('eD').value;c.due=d===''?null:+d;
+      const r=$('eR').value,was=repKey(c.repeat)||'';
+      if(r!==was)c.repeat=r?{...repFromKey(r),at:c.repeat?.at??(KIDS.includes(c.holder)?960:1140),start:t}:null;
+    }
+    touch(c);addLog('var(--muted)',`${viewer} edited “${c.t}”`);
+    save();back();showUndo();
+  };
+  draw=drawKeep;draw();
+}
+function proveIt(card,c){
+  let url=null;
+  overlay.innerHTML=`<div class="sub">${esc(c.t)}</div><h2>Prove it 📸</h2>
+    <p>Snap a photo of the finished job. It goes to Mom and Dad for a thumbs-up, then it’s deleted.</p>
+    <label class="cam"><input type="file" accept="image/*" capture="environment" id="proof" aria-label="Take a photo"><span id="camTxt">📷 Tap to take the photo</span></label>
+    <div class="actions"><button type="button" class="primary" id="pSend" disabled>Send for a thumbs-up</button><button type="button" class="quiet" id="pBack">Back</button></div>`;
+  $('proof').onchange=e=>{
+    const f=e.target.files&&e.target.files[0];if(!f)return;
+    if(url)URL.revokeObjectURL(url);url=URL.createObjectURL(f);
+    $('camTxt').outerHTML=`<img src="${url}" alt="Your photo">`;$('pSend').disabled=false;
+  };
+  $('pSend').onclick=()=>{if(url)URL.revokeObjectURL(url);overlay.hidden=true;busy=false;commit(card,c,'done',{photo:true})};
+  $('pBack').onclick=()=>{if(url)URL.revokeObjectURL(url);openWork(card,c)};
+}
+function openDecide(card,c){
+  busy=true;overlay.className=`overlay ${c.kind}`;
+  overlay.innerHTML=`<div class="sub">Put off ${c.stamps.length} times · ${c.stamps.join(' ')}</div>
+    <h2>This one keeps coming back. Let’s decide.</h2><p>“${esc(c.t)}” · ~${c.mins} min</p>
+    <div class="decide-grid">
+      <button type="button" class="primary" id="dDo">Do it now<small>Open it up</small></button>
+      <button type="button" id="dHand">Hand it off<small>Swipe up after this</small></button>
+      <button type="button" id="dAgent">Park for ${esc(agentOf(viewer))}<small>${viewer===CLOUD.me&&agentConnected()?'Not sent: only the probe is wired up yet':'Not sent: not connected yet'}</small></button>
+      <button type="button" id="dDrop">Let it go<small>Off the deck</small></button>
+    </div>
+    <div class="actions"><button type="button" class="quiet" id="dClose">Back to the deck</button></div>`;
+  overlay.hidden=false;
+  const close=()=>{overlay.hidden=true;busy=false};
+  $('dDo').onclick=()=>{close();openWork(card,c)};
+  $('dAgent').onclick=()=>{close();commit(card,c,'agent')};
+  $('dDrop').onclick=()=>{close();commit(card,c,'drop')};
+  $('dHand').onclick=()=>{close();const h=$('hint');h.textContent='Swipe up and aim at someone';h.classList.add('flash');
+    setTimeout(()=>{h.textContent='Swipe right and the app finds a time';h.classList.remove('flash')},3500)};
+  $('dClose').onclick=close;
+}
+
+/* ---------- Time moves ---------- */
+function advance(to){
+  const prevDay=nowDay(),prev=stat(viewer);
+  now=to;
+  if(nowDay()>prevDay)closeDays(prevDay,nowDay());
+  const woke=cards.filter(c=>c.slot&&c.slot.day*DAY+c.slot.start<=now);
+  woke.forEach(c=>{c.slot=null;c.status='open';touch(c);fresh.add(c.id)});
+  addLog('var(--later)',`It’s ${nowDay()>prevDay?dayName(nowDay())+' ':''}${fmt(now)}. ${woke.length?`${woke.length} card${woke.length>1?'s':''} came back.`:'Nothing was waiting.'}`);
+  runDeals();
+  if(nowDay()>prevDay){if(prev.done>=3)say(`Yesterday: ${prev.done} done, ${prev.handed} handed off. Solid day.`,'recap')}
+  render();
+}
+$('skipHour').onclick=()=>{if(!busy)advance(now+60)};
+$('skipDay').onclick=()=>{if(!busy)advance((nowDay()+1)*DAY+WAKE)};
+$('reset').onclick=()=>{if(busy)return;try{localStorage.removeItem(STORE)}catch(e){}seed();lastKind='';closeWait();runDeals();render();renderLog();
+  if(auth)syncProbe({ensure:true}).then(()=>{if(!busy)render()}).catch(()=>{ensureProbeCard();if(!busy)render()})};
+$('team').addEventListener('click',e=>{
+  const b=e.target.closest('.who');if(!b||busy)return;viewer=b.dataset.n;closeWait();
+  const back=deckOf(viewer).find(c=>fresh.has(c.id)&&isReturned(c));
+  render();
+  if(back)say(`${curAsg(back).to} finished “${back.t}”. Your review ✓`,'handled');
+});
+window.addEventListener('resize',()=>applyShapes(deck));
+document.addEventListener('keydown',e=>{
+  if(busy||!$('waitLayer').hidden||!$('cloudLayer').hidden||(e.target.closest&&e.target.closest('input,textarea,button')))return;
+  const top=deck.querySelector('.card:last-child'),c=deckOf(viewer)[0];if(!top||!c)return;
+  if(e.key==='ArrowLeft')openWork(top,c);
+  if(e.key==='ArrowRight')notNow(top,c);
+  if(e.key==='ArrowDown'&&c.kind!=='moment')commit(top,c,'agent');
+});
+if(!load())seed();
+{const woke=cards.filter(c=>c.slot&&c.slot.day*DAY+c.slot.start<=now);woke.forEach(c=>{c.slot=null;c.status='open';fresh.add(c.id)})}
+runDeals();render();renderLog();
+// Signed in from a previous visit: mirror the server's view of the probe, then keep an eye on it.
+if(auth)syncProbe().then(s=>{if(s&&!busy)render()}).catch(()=>{}).finally(()=>schedulePoll(5000));
+</script>
