@@ -537,7 +537,7 @@ const curAsg=c=>(c.asg&&c.asg.length?c.asg[c.asg.length-1]:null);
 const openAsg=c=>{const a=curAsg(c);return a&&[...WAIT_STATES,'returned'].includes(a.state)?a:null};
 const isReturned=c=>{const a=curAsg(c);return!!a&&a.state==='returned'&&c.holder===a.by};
 // Waiting on = a view of open assignments this person sent. No copies: it reads the cards themselves.
-const waitingFor=n=>cards.filter(c=>c.kind!=='moment'&&(c.asg||[]).some(a=>a.by===n&&WAIT_STATES.includes(a.state))&&c.holder!==n);
+const waitingFor=n=>cards.filter(c=>(c.kind!=='moment'||mode==='family')&&(c.asg||[]).some(a=>a.by===n&&WAIT_STATES.includes(a.state))&&c.holder!==n);   // in a real household a moment for someone else stays visible here until it reaches their phone
 const asgTo=(c,n)=>(c.asg||[]).filter(a=>a.to===n&&WAIT_STATES.includes(a.state)).at(-1); // the open request addressed to n
 const myAsg=(c,n)=>(c.asg||[]).filter(a=>a.by===n&&WAIT_STATES.includes(a.state)).at(-1);
 function assignTo(c,to,kind,state,by){const a={id:uid(),to,kind,state,at:now,by:by||viewer};(c.asg=c.asg||[]).push(a);c.status='assigned';touch(c);return a}
@@ -1420,21 +1420,21 @@ function createFrom(p){
   }
   if(p.kind==='moment'){
     const c=mk({t:p.title,kind:'moment',maker:viewer,holder,mins:0});cards.push(c);
-    if(holder!==viewer){addLog('var(--pink)',`💌 ${nm(viewer)} sent ${nm(holder)} a moment`);say(`Sent to ${nm(holder)} 💌`,'info')}else fresh.add(c.id);
+    if(holder!==viewer){if(mode==='family')assignTo(c,holder,'person','sent');addLog('var(--pink)',`💌 ${nm(viewer)} sent ${nm(holder)} a moment`);say(mode==='family'?`For ${nm(holder)} 💌 It’s in Waiting on; hand-offs reach her phone in the next update.`:`Sent to ${nm(holder)} 💌`,'info')}else fresh.add(c.id);
     render();return;
   }
-  const isKid=isKid(holder);
-  const c=mk({t:p.title,kind:p.kind,tag:p.kind==='chore'?'Chore':'New',maker:viewer,holder,proof:p.kind==='chore'&&isKid,due:p.due,handedAt:holder!==viewer?now:null,src:'quick add'});
+  const kidHolder=isKid(holder);
+  const c=mk({t:p.title,kind:p.kind,tag:p.kind==='chore'?'Chore':'New',maker:viewer,holder,proof:p.kind==='chore'&&kidHolder,due:p.due,handedAt:holder!==viewer?now:null,src:'quick add'});
   if(holder!==viewer)assignTo(c,holder,'person','sent');
   if(p.kind==='chore'&&p.repeat){
-    c.repeat={...p.repeat,at:p.at??(isKid?960:1140),start:today};
+    c.repeat={...p.repeat,at:p.at??(kidHolder?960:1140),start:today};
     const d=nextOcc(c.repeat,today);
     if(!(d===today&&c.repeat.at<=tod()))c.slot={day:d,start:c.repeat.at};
   }else if(p.at!=null){
     const d=p.due??(p.at>tod()?today:today+1);c.slot={day:d,start:p.at};if(c.due==null)c.due=d;
   }
   cards.push(c);if(!c.slot)fresh.add(c.id);
-  const where=c.slot?slotWords(c.slot).line.replace('Back','Shows up'):holder!==viewer?`Sent to ${nm(holder)}’s deck`:`It’s #${deckOf(viewer).indexOf(c)+1} in the deck`;
+  const where=c.slot?slotWords(c.slot).line.replace('Back','Shows up'):holder!==viewer?(mode==='family'?`In Waiting on for ${nm(holder)}; hand-offs reach the other phone in the next update`:`Sent to ${nm(holder)}’s deck`):`It’s #${deckOf(viewer).indexOf(c)+1} in the deck`;
   addLog(holder!==viewer?'var(--team)':'var(--text)',holder!==viewer?`${nm(viewer)} gave ${nm(holder)} “${c.t}”${c.repeat?' · 🔁 '+repLabel(c.repeat):''}`:`${nm(viewer)} added “${c.t}”${c.repeat?' · 🔁 '+repLabel(c.repeat):''}`);
   say(`Added. ${where}.`,'info');render();
 }
@@ -1511,7 +1511,7 @@ function bind(card,c){
     chips.forEach(el=>el.classList.remove('on'));slot.classList.remove('open');
     if(st.mode==='swipe'&&st.dx<-110){card._settle();return openWork(card,c)}
     if(st.mode==='swipe'&&st.dx>110)return notNow(card,c);
-    if(st.mode==='vert'&&st.dy<-80&&st.person>=0)return commit(card,c,'team',others[st.person].n);
+    if(st.mode==='vert'&&st.dy<-80&&st.person>=0)return commit(card,c,'team',others[st.person].id);   // the person's key, never their display name
     if(st.mode==='vert'&&st.dy>80){
       if(c.kind==='moment'){card.classList.remove('held','down');card._settle();return say('Moments are for people, not agents 💌','info')}
       return commit(card,c,'agent');
@@ -1560,9 +1560,10 @@ function commit(card,c,a,arg){
   }
   if(a==='team'){
     const to=arg,k=others.findIndex(p=>p.id===to);
+    if(k<0){busy=false;card._flying=false;undoRec=null;render();toast('Couldn’t tell who that was for');return}   // never freeze on a bad target
     const back=to===c.maker&&me!==c.maker;
     const cur=openAsg(c),tm=asgTo(c,me);
-    if(c.kind!=='moment'){
+    if(c.kind!=='moment'||mode==='family'){
       if(tm&&tm.by===to)setState(tm,'declined');                                  // sent back unfinished
       else if(isReturned(c)&&cur.to===to){setState(cur,'reopened');assignTo(c,to,'person','sent',me)} // "not quite", back to the same person
       else assignTo(c,to,'person','sent',me);
