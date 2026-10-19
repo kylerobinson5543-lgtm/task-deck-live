@@ -432,6 +432,7 @@ const PH_WEEKEND={8:['🥞','Slow weekend breakfast'],9:['🧺','Weekend morning
 /* ---------- Clock. Saved state keeps its own day zero so dates stay put across visits. ---------- */
 const DAY=1440,WAKE=5*60,SLEEP=22*60,DECIDE_AT=3,DEAL_AT=930,CAP=4;
 let BASE=new Date();BASE.setHours(0,0,0,0);
+const EPOCH=new Date(2026,0,1);   // family mode: every phone counts days from the same midnight, so a card's dates mean the same thing everywhere
 let now=0;
 const nowDay=()=>Math.floor(now/DAY),tod=()=>((now%DAY)+DAY)%DAY;
 const dateOf=d=>{const x=new Date(BASE);x.setDate(x.getDate()+d);return x};
@@ -604,16 +605,28 @@ function seed(){
 }
 
 /* ---------- Saving: everything stays on this phone between visits ---------- */
-function save(){try{localStorage.setItem(STORE,JSON.stringify({base:BASE.getTime(),now,seq,cards,archive:archive.slice(0,300),log:log.slice(0,40),stats,pool,ledger,out,dealt,hist,share,extras,viewer,dayLog,goalI}))}catch(e){}}
+function save(){try{localStorage.setItem(STORE,JSON.stringify({base:BASE.getTime(),now,seq,cards,archive:archive.slice(0,300),log:log.slice(0,40),stats,pool,ledger,out,dealt,hist,share,extras,viewer,dayLog,goalI,...(mode==='family'?{sync}:{})}))}catch(e){}
+  if(mode==='family')scheduleSync(700)}   // something may have changed: share it soon
 function load(){
   try{
     const s=JSON.parse(localStorage.getItem(STORE)||'null');if(!s||!s.cards)return false;
     BASE=new Date(s.base);({seq,cards,log,stats,pool,ledger,out,dealt,hist,share,extras,viewer}=s);
     archive=s.archive||[];dayLog=s.dayLog||{};goalI=s.goalI||0;
-    now=Math.max(s.now,realNow());
-    closeDays(Math.floor(s.now/DAY),nowDay());
+    sync=s.sync&&s.sync.known?s.sync:freshSync();
+    let was=s.now;
+    if(mode==='family'&&BASE.getTime()!==EPOCH.getTime()){const dd=Math.round((BASE-EPOCH)/864e5);rebase(dd);was+=dd*DAY;BASE=new Date(EPOCH)}   // a cache from before the shared day zero
+    now=Math.max(was,realNow());
+    closeDays(Math.floor(was/DAY),nowDay());
     return true;
   }catch(e){return false}
+}
+// Move every day index and minute stamp by dd days (one-time, when a phone's cache switches to the shared day zero).
+function rebase(dd){const dm=dd*DAY,sh=v=>typeof v==='number'?v+dm:v,sd=v=>typeof v==='number'?v+dd:v;
+  cards.concat(archive).forEach(c=>{c.born=sh(c.born);c.handedAt=sh(c.handedAt);c.updatedAt=sh(c.updatedAt);c.due=sd(c.due);c.dealt=sd(c.dealt);
+    if(c.slot)c.slot.day=sd(c.slot.day);if(c.repeat)c.repeat.start=sd(c.repeat.start);if(c.nudge)c.nudge.at=sh(c.nudge.at);
+    (c.asg||[]).forEach(a=>{a.at=sh(a.at);a.updated=sh(a.updated)})});
+  const rekey=o=>{const r={};for(const k in o){const m=k.match(/^(.*)@(-?\d+)$/);r[m?`${m[1]}@${+m[2]+dd}`:k]=o[k]}return r};
+  stats=rekey(stats);dayLog=rekey(dayLog);extras.forEach(x=>x.day=sd(x.day));ledger.forEach(l=>l.day=sd(l.day));
 }
 
 /* ---------- Priority and urgency ---------- */
@@ -1115,11 +1128,11 @@ function renderCloudSheet(){   // the Account sheet (family mode) or the demo no
   const c=probeCard(),a=c&&curAsg(c),k=c&&c.cloud,parent=me.role==='parent',admin=isAdmin();
   const line=!parent?'':!c?`Handshake probe: <b>not in your deck</b>`:k&&a&&a.kind==='agent'&&(a.cloudId||k.sending||k.error)?`Handshake probe: <b>${esc(a.state==='returned'?`back for your review · ${checksWord(k.result)}`:STATE_WORD(a,c))}</b>`:`Handshake probe: <b>in your deck, not sent yet</b>`;
   el.innerHTML=`<div class="grab"></div><h3 id="cloudH">${esc(me.display_name)} · ${esc(household.name)}</h3><div class="sub">${esc(me.role==='parent'?'Parent':me.role==='kid'?'Kid':'Family')}${admin?' · manages the household':''} · signed in${auth.user.email?' as '+esc(auth.user.email):' on this device'}</div>
-    <div class="cstat">${parent?`🤖 ${esc(CLOUD.agent)}: <b>connected</b> (only the handshake probe is wired up yet)<br>${line}`:`🤖 ${esc(CLOUD.agent)} is available to parents.`}</div>
+    <div class="cstat">🔄 Shared cards: <b>${esc(sync.err?`couldn’t reach the server (${sync.err})`:sync.at?`up to date as of ${new Date(sync.at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}`:'syncing…')}</b> · ${cards.filter(syncable).length} in play, ${archive.length} finished<br>${parent?`🤖 ${esc(CLOUD.agent)}: <b>connected</b> (only the handshake probe is wired up yet)<br>${line}`:`🤖 ${esc(CLOUD.agent)} is available to parents.`}</div>
     <div class="actions">${admin?`<button type="button" id="cFamily">👨‍👩‍👧 Family</button>`:''}${parent&&!c?`<button type="button" id="cProbe">＋ Add the handshake probe</button>`:''}<button type="button" id="cRefresh">↻ Refresh</button><button type="button" class="quiet" id="cOut">Sign out</button></div>`;
   const cp=$('cProbe');if(cp)cp.onclick=()=>{ensureProbeCard();render();closeCloud();toast('Probe card added to the top of the deck')};
   const cf=$('cFamily');if(cf)cf.onclick=()=>{closeCloud();openFamily()};
-  $('cRefresh').onclick=async()=>{const b=$('cRefresh');b.disabled=true;try{await loadMe();if(parent)await syncProbe();render();toast('Up to date')}catch(e){toast(e.message==='sign_in_required'?'Signed out':'Couldn’t reach the server')}renderCloudSheet()};
+  $('cRefresh').onclick=async()=>{const b=$('cRefresh');b.disabled=true;try{await loadMe();if(parent)await syncProbe();clearTimeout(syncT);await syncTick();if(sync.err)throw new Error(sync.err);render();toast('Up to date')}catch(e){toast(e.message==='sign_in_required'?'Signed out':'Couldn’t reach the server')}renderCloudSheet()};
   $('cOut').onclick=async()=>{closeCloud();await signOut();leaveToWelcome()};
 }
 $('cloudBtn').onclick=openCloud;$('cloudScrim').onclick=closeCloud;
@@ -1140,6 +1153,85 @@ async function loadMe(){
   if(mode==='family')viewer=me.id;
   return sv;
 }
+/* ---------- Shared cards (R1.2) and real hand-offs (R1.3) ----------
+   In family mode the household's cards live on the server, one row per card (td_card_put / td_cards_sync), and every
+   phone keeps its own copy. The server shows a phone only the cards that involve its person (maker, holder, anyone in
+   the hand-off history), so two adults' private cards stay private and nothing reaches a child that isn't theirs.
+   Every change a phone makes is pushed with the server version it was based on; a stale push is refused and the
+   server's copy wins on this phone. Every few seconds while the app is open (and whenever it comes back to the
+   front) the phone pulls what changed since its last pull: a card handed to you lands in your deck with a note;
+   a card you handed off shows Seen, Done, or comes back for your review. The handshake probe is not a shared
+   card: it stays on its Stage 1 path. */
+const freshSync=()=>({since:null,known:{},err:null,at:0});   // known[id] = {v: server version (0 = not there yet), j: the copy the server confirmed}
+let sync=freshSync(),syncT=0,syncBusy=false;
+const syncable=c=>!c.probe&&c.src!=='probe';
+const shared=c=>{const o={};for(const k in c)if(k!=='cloud'&&k[0]!=='_'&&c[k]!==undefined)o[k]=c[k];return o};
+const canon=o=>JSON.stringify(o,(k,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.keys(v).sort().reduce((a,x)=>(a[x]=v[x],a),{}):v);   // same bytes for the same card, whatever the key order
+function scheduleSync(ms){clearTimeout(syncT);if(auth&&mode==='family'&&me)syncT=setTimeout(syncTick,ms)}
+async function syncTick(){
+  if(mode!=='family'||!auth||!me)return;
+  if(document.visibilityState!=='visible')return scheduleSync(30000);
+  if(busy||syncBusy)return scheduleSync(1500);                         // never change cards under a gesture
+  syncBusy=true;let changed=false,woke=false;
+  try{
+    const d0=nowDay();now=Math.max(now,realNow());if(nowDay()!==d0)closeDays(d0,nowDay());   // the family clock is the real clock
+    if(cards.some(c=>c.slot&&c.slot.day*DAY+c.slot.start<=now)){wakeCards();woke=true}
+    await syncPush();
+    changed=await syncPull();
+    sync.err=null;sync.at=Date.now();
+    {const live=new Set(cards.concat(archive).map(c=>c.id));for(const id in sync.known)if(!live.has(id))delete sync.known[id]}   // forget cards the archive has let go of
+  }catch(e){if(e.message!=='sign_in_required')sync.err=e.message||'network'}
+  finally{syncBusy=false}
+  if(mode!=='family')return;
+  if((changed||woke)&&!busy)render();else{renderClock();save()}
+  scheduleSync(6000);                                                 // after render → save → scheduleSync(700): this one wins
+}
+// Push every card that differs from the copy the server last confirmed. Finished cards are pushed only if the
+// server already knew them (a card created and dropped on one phone never leaves it).
+async function syncPush(){
+  for(const c of cards.concat(archive.filter(c=>sync.known[c.id]))){
+    if(!syncable(c))continue;
+    const j=canon(shared(c)),k=sync.known[c.id];
+    if(k&&k.j===j)continue;
+    const r=await cloudRpc('td_card_put',{p_card:JSON.parse(j),p_expected_version:k?k.v:0});
+    if(r&&r.ok){sync.known[c.id]={v:r.version,j};continue}
+    if(r&&r.error==='stale'){applyServer({id:c.id,version:r.version,card:r.card,by:r.by},'stale');continue}
+    sync.known[c.id]={v:k?k.v:0,j,err:(r&&r.error)||'error'};      // refused for good: keep it here, retry only if it changes
+    addLog('var(--later)',`⚠ “${c.t}” couldn’t be shared (${(r&&r.error)||'error'})`);
+  }
+}
+async function syncPull(){
+  const r=await cloudRpc('td_cards_sync',{p_since:sync.since||'1970-01-01'});
+  if(!r||!r.ok)throw new Error((r&&r.error)||'sync failed');
+  let changed=false;
+  for(const row of r.cards||[]){const k=sync.known[row.id];if(k&&k.v>=row.version)continue;if(applyServer(row,'pull'))changed=true}
+  sync.since=r.now;
+  return changed;
+}
+// Take the server's copy of one card: replace ours in place (so an open card keeps its object), file it in the deck
+// or the archive, and tell the person what just happened to it.
+function applyServer(row,why){
+  const j=canon(row.card),srv=JSON.parse(j);sync.known[row.id]={v:row.version,j};
+  let c=cards.find(x=>x.id===row.id)||archive.find(x=>x.id===row.id);
+  const before=c?{holder:c.holder,status:c.status,nudge:c.nudge&&c.nudge.at}:null;
+  if(c&&canon(shared(c))===j)return false;
+  if(c){for(const k of Object.keys(c))delete c[k];Object.assign(c,srv)}else c=srv;
+  const done=c.status==='done'||c.status==='dropped';
+  if(done){const i=cards.indexOf(c);if(i>=0)cards.splice(i,1);if(!archive.includes(c)){archive.unshift(c);if(archive.length>300)archive.length=300}}
+  else{const i=archive.indexOf(c);if(i>=0)archive.splice(i,1);if(!cards.includes(c))cards.push(c)}
+  const by=row.by&&row.by!==viewer?nm(row.by):null;
+  if(!done&&c.holder===viewer&&(!before||before.holder!==viewer)){                 // it just landed in my deck
+    fresh.add(c.id);
+    const a=curAsg(c),from=isReturned(c)?c.doneBy:c.kind==='moment'?c.maker:c.sentBack||(a&&a.by!==viewer?a.by:c.maker);
+    const msg=isReturned(c)?`${nm(from)} finished “${c.t}” · your review`:c.kind==='moment'?`💌 A moment from ${nm(from)}`:c.sentBack?`${nm(from)} sent “${c.t}” back`:`${nm(from)} handed you “${c.t}”`;
+    addLog(isReturned(c)?'var(--do)':c.kind==='moment'?'var(--pink)':'var(--team)',msg);toast(msg);
+  }else if(!done&&c.nudge&&c.holder===viewer&&(!before||before.nudge!==c.nudge.at)){addLog('var(--team)',`👋 ${nm(c.nudge.by)} nudged you about “${c.t}”`);toast(`${nm(c.nudge.by)} nudged you about “${c.t}”`)}
+  else if(done&&before&&before.status!==c.status&&by)addLog(c.kind==='moment'?'var(--pink)':c.status==='done'?'var(--do)':'var(--muted)',c.kind==='moment'?`💌 ${by} got your moment`:c.status==='done'?`✓ ${by} closed “${c.t}”`:`${by} dropped “${c.t}”`);
+  else if(before&&before.holder===viewer&&c.holder!==viewer&&by)addLog('var(--muted)',`${by} took “${c.t}” back`);
+  else if(why==='stale')toast(`“${c.t}” changed on ${by?by+'’s':'another'} phone · showing the latest`);
+  return true;
+}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&mode==='family')scheduleSync(0)});
 // Children (and anyone without an email) sign in anonymously: a real account on this device, no email of any kind.
 // A parent's one-time family code then links it to the right person. Lost phone: the parent issues a new code.
 async function signInAnonymously(){
@@ -1151,9 +1243,8 @@ async function signInAnonymously(){
 function enterMode(m){mode=m;document.body.dataset.mode=m;$('welcome').hidden=!(m==='welcome'||m==='join');$('app').hidden=(m==='welcome'||m==='join');}
 function wakeCards(){const woke=cards.filter(c=>c.slot&&c.slot.day*DAY+c.slot.start<=now);woke.forEach(c=>{c.slot=null;c.status='open';fresh.add(c.id)})}
 function seedFamily(){
-  BASE=new Date();BASE.setHours(0,0,0,0);
-  const r=new Date();now=Math.max(0,Math.floor((r.getHours()*60+r.getMinutes())/15)*15);
-  seq=0;cards=[];archive=[];log=[];stats={};ledger=[];out={};dealt={};hist={};share={};extras=[];pool=[];fresh.clear();goalI=0;dayLog={};
+  BASE=new Date(EPOCH);now=realNow();
+  seq=0;cards=[];archive=[];log=[];stats={};ledger=[];out={};dealt={};hist={};share={};extras=[];pool=[];fresh.clear();goalI=0;dayLog={};sync=freshSync();
 }
 function startDemo(){
   people=DEMO_PEOPLE;STORE='taskdeck.v1';viewer='Kyle';me=null;household=null;labels={};clearTimeout(pollT);
@@ -1164,9 +1255,10 @@ function startFamily(){
   STORE='taskdeck.family.'+me.id;enterMode('family');
   if(!load())seedFamily();viewer=me.id;                                   // you are always you, whatever the cache says
   wakeCards();runDeals();setQaPlaceholder();render();renderLog();
+  scheduleSync(0);                                                        // share what's here, fetch what's new
   if(me.role==='parent'){syncProbe().then(sv=>{if(sv&&!busy)render()}).catch(()=>{}).finally(()=>schedulePoll(5000))}
 }
-function leaveToWelcome(){clearTimeout(pollT);me=null;household=null;labels={};people=DEMO_PEOPLE;enterMode('welcome');renderWelcome()}
+function leaveToWelcome(){clearTimeout(pollT);clearTimeout(syncT);me=null;household=null;labels={};people=DEMO_PEOPLE;enterMode('welcome');renderWelcome()}
 async function boot(){
   if(!auth){enterMode('welcome');renderWelcome();return}
   try{const sv=await loadMe();if(sv)startFamily();else{enterMode('join');renderWelcome()}}
@@ -1420,7 +1512,7 @@ function createFrom(p){
   }
   if(p.kind==='moment'){
     const c=mk({t:p.title,kind:'moment',maker:viewer,holder,mins:0});cards.push(c);
-    if(holder!==viewer){if(mode==='family')assignTo(c,holder,'person','sent');addLog('var(--pink)',`💌 ${nm(viewer)} sent ${nm(holder)} a moment`);say(mode==='family'?`For ${nm(holder)} 💌 It’s in Waiting on; hand-offs reach her phone in the next update.`:`Sent to ${nm(holder)} 💌`,'info')}else fresh.add(c.id);
+    if(holder!==viewer){if(mode==='family')assignTo(c,holder,'person','sent');addLog('var(--pink)',`💌 ${nm(viewer)} sent ${nm(holder)} a moment`);say(mode==='family'?`On its way to ${nm(holder)} 💌`:`Sent to ${nm(holder)} 💌`,'info')}else fresh.add(c.id);
     render();return;
   }
   const kidHolder=isKid(holder);
@@ -1434,7 +1526,7 @@ function createFrom(p){
     const d=p.due??(p.at>tod()?today:today+1);c.slot={day:d,start:p.at};if(c.due==null)c.due=d;
   }
   cards.push(c);if(!c.slot)fresh.add(c.id);
-  const where=c.slot?slotWords(c.slot).line.replace('Back','Shows up'):holder!==viewer?(mode==='family'?`In Waiting on for ${nm(holder)}; hand-offs reach the other phone in the next update`:`Sent to ${nm(holder)}’s deck`):`It’s #${deckOf(viewer).indexOf(c)+1} in the deck`;
+  const where=c.slot?slotWords(c.slot).line.replace('Back','Shows up'):holder!==viewer?(mode==='family'?`On its way to ${nm(holder)}; it’s in Waiting on until it comes back`:`Sent to ${nm(holder)}’s deck`):`It’s #${deckOf(viewer).indexOf(c)+1} in the deck`;
   addLog(holder!==viewer?'var(--team)':'var(--text)',holder!==viewer?`${nm(viewer)} gave ${nm(holder)} “${c.t}”${c.repeat?' · 🔁 '+repLabel(c.repeat):''}`:`${nm(viewer)} added “${c.t}”${c.repeat?' · 🔁 '+repLabel(c.repeat):''}`);
   say(`Added. ${where}.`,'info');render();
 }
@@ -1602,8 +1694,9 @@ function commit(card,c,a,arg){
     return;
   }
   if(a==='done'||a==='accept'){
-    const cur=openAsg(c),tm=asgTo(c,me),mine=!!tm&&tm.kind==='person'&&tm.by!==me&&people.some(p=>p.id===tm.by);
+    const cur=openAsg(c),tm=asgTo(c,me),mine=!!tm&&tm.kind==='person'&&tm.by!==me&&people.some(p=>p.id===tm.by)&&c.kind!=='moment';
     if(a==='accept'){setState(cur,'accepted');stat(me,'closed')}
+    if(c.kind==='moment'&&tm)setState(tm,'accepted');   // a moment is received, not reviewed: reading it closes the loop
     if(mine){
       // Done by the assignee = returned for review. The same card goes back to whoever asked; it isn't finished until they accept.
       setState(tm,'returned');c.asg.push(c.asg.splice(c.asg.indexOf(tm),1)[0]);c.holder=tm.by;c.doneBy=me;c.sentBack=null;c.nudge=null;c.handedAt=now;touch(c);fresh.add(c.id);
@@ -1616,7 +1709,7 @@ function commit(card,c,a,arg){
       addLog('var(--do)',`👍 ${nm(me)} gave ${nm(c.doneBy)} a thumbs-up for “${c.t}”`);
       say(`Thumbs-up sent to ${nm(c.doneBy)} 👍`,'info');
     }else if(c.kind==='moment'){
-      if(c.maker!==me){const r=mk({kind:'moment',t:`${nm(me)} got your note 💌`,maker:me,holder:c.maker,mins:0,note:c.t});cards.push(r);fresh.add(r.id)}
+      if(c.maker!==me&&!c.reply){const r=mk({kind:'moment',reply:true,t:`${nm(me)} got your note 💌`,maker:me,holder:c.maker,mins:0,note:c.t});cards.push(r);fresh.add(r.id)}   // one reply, never a reply to the reply
       addLog('var(--pink)',`💌 A moment between ${nm(me)} and ${nm(c.maker)}`);
       say('Sent with love 💌','info');
     }else if(c.kind==='chore'&&isKid(me)&&!mine){
