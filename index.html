@@ -1,3 +1,12 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#13151b">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Task Deck V1</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Caveat:wght@700&family=Figtree:wght@400;500;600&display=swap">
@@ -286,6 +295,7 @@ body[data-mode="family"] .team .who{cursor:default}
 .fam .names{display:grid;gap:8px}
 .fam .names label{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:center;font-size:13.5px}
 .fam .names input,.fam select,.fam .add input{font:inherit;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--text);width:100%}
+.fam .sub select{width:auto;display:inline-block;padding:4px 8px;margin:0 2px}
 .fam .add{display:grid;grid-template-columns:1fr 80px 1fr;gap:8px}
 .fam h4{margin:12px 0 2px;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
 /* Cloud connection (Grok Bot) */
@@ -336,7 +346,8 @@ button{font:inherit;font-size:13px;font-weight:600;color:var(--text);background:
 button:focus-visible,.mc:focus-visible,.wrow:focus-visible{outline:2px solid var(--team);outline-offset:2px}
 @media (prefers-reduced-motion:reduce){.overlay,.nudge{animation:none}}
 </style>
-
+</head>
+<body>
 <div class="welcome" id="welcome" hidden></div>
 <div class="app" id="app" hidden>
   <header>
@@ -1819,3 +1830,5 @@ document.addEventListener('keydown',e=>{
 });
 boot();
 </script>
+</body>
+</html>
