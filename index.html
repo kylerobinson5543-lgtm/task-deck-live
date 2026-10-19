@@ -1465,13 +1465,15 @@ function parseLine(raw){
   return p;
 }
 let qp=null;
-const WHO_CYCLE=['__me','Ashley','Myla','Kuhlly','__kids','Shelie','Cindy','Kyle'];
+// The "For" chip cycles through the household as THIS viewer sees it: me, then everyone else by their person key
+// (never a display name: names are what the viewer calls people, keys are who they are), then the kids' deal.
+const whoCycle=()=>['__me',...people.filter(p=>p.id!==viewer).map(p=>p.id),...(kidKeys().length?['__kids']:[])];
 const REP_CYCLE=[null,'daily','weekdays','weekly','other','monthly'];
 const AT_CYCLE=[null,480,960,1140];
 function repFromKey(k){const t=nowDay();return k==='daily'?{type:'weekly',days:[0,1,2,3,4,5,6],interval:1}:k==='weekdays'?{type:'weekly',days:[1,2,3,4,5],interval:1}
   :k==='weekly'?{type:'weekly',days:[dow(t)],interval:1}:k==='other'?{type:'weekly',days:[dow(t)],interval:2}:k==='monthly'?{type:'monthly',dom:dateOf(t).getDate(),interval:1}:null}
 function repKey(r){if(!r)return null;if(r.type==='monthly')return'monthly';const k=r.days.slice().sort().join();return k==='0,1,2,3,4,5,6'?'daily':k==='1,2,3,4,5'?'weekdays':r.interval>1?'other':'weekly'}
-const whoName=w=>w==='__me'?viewer:w==='__kids'?'Kids (deal)':w;
+const whoName=w=>w==='__me'||w===viewer?'Me':w==='__kids'?'Kids (deal)':nm(w);   // what the chip and the preview say, never a raw key
 function renderPreview(){
   const box=$('qprev');
   if(!qp||!qp.title){box.hidden=true;return}
@@ -1492,7 +1494,7 @@ function renderPreview(){
   box.querySelectorAll('.qchips button').forEach(b=>b.onclick=()=>{
     const c=b.dataset.c;
     if(c==='kind')qp.kind={task:'chore',chore:'moment',moment:'task'}[qp.kind];
-    if(c==='who')qp.who=WHO_CYCLE[(WHO_CYCLE.indexOf(qp.who)+1)%WHO_CYCLE.length];
+    if(c==='who'){const cy=whoCycle();qp.who=cy[(cy.indexOf(qp.who===viewer?'__me':qp.who)+1)%cy.length]}
     if(c==='rep'){const i=REP_CYCLE.indexOf(repKey(qp.repeat));qp.repeat=repFromKey(REP_CYCLE[(i+1)%REP_CYCLE.length]);if(qp.repeat&&qp.kind==='task')qp.kind='chore'}
     if(c==='at')qp.at=AT_CYCLE[(AT_CYCLE.indexOf(qp.at)+1)%AT_CYCLE.length];
     renderPreview();
