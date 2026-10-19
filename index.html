@@ -7,6 +7,12 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="application-name" content="Task Deck">
+<meta name="apple-mobile-web-app-title" content="Task Deck">
+<!-- Home screen: the manifest and icons live next to this file on the public site (web/ in the repository) -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <title>Task Deck V1</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Caveat:wght@700&family=Figtree:wght@400;500;600&display=swap">
@@ -26,7 +32,7 @@
 }
 [hidden]{display:none!important}
 html,body{height:100%;overflow-x:clip}
-body{background:var(--bg);color:var(--text);font-family:var(--body);font-size:15px;line-height:1.45;padding-inline:16px;-webkit-tap-highlight-color:transparent}
+body{background:var(--bg);color:var(--text);font-family:var(--body);font-size:15px;line-height:1.45;padding-inline:16px;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);-webkit-tap-highlight-color:transparent}   /* installed on a phone: keep clear of the status bar and the home indicator */
 .app{max-width:420px;margin:0 auto;padding-block:18px 40px;display:flex;flex-direction:column;gap:16px}
 header{display:flex;justify-content:space-between;align-items:center;gap:12px}
 h1{font-family:var(--display);font-weight:800;font-size:26px;letter-spacing:-.02em;margin:0}
@@ -1205,7 +1211,9 @@ async function syncPull(){
   if(!r||!r.ok)throw new Error((r&&r.error)||'sync failed');
   let changed=false;
   for(const row of r.cards||[]){const k=sync.known[row.id];if(k&&k.v>=row.version)continue;if(applyServer(row,'pull'))changed=true}
-  sync.since=r.now;
+  // The next pull starts 15 s before the server's clock, not at it: a write stamped just before this pull but
+  // committed just after it would otherwise never be seen. Rows seen twice are skipped by version above.
+  const t=Date.parse(String(r.now).replace(/(\.\d{3})\d+/,'$1'));sync.since=isNaN(t)?r.now:new Date(t-15000).toISOString();
   return changed;
 }
 // Take the server's copy of one card: replace ours in place (so an open card keeps its object), file it in the deck
