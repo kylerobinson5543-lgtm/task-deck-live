@@ -203,6 +203,8 @@ h1{font-family:var(--display);font-weight:800;font-size:26px;letter-spacing:-.02
 .cam input{position:absolute;inset:0;opacity:0;cursor:pointer}
 .cam img{width:100%;height:220px;object-fit:cover;display:block}
 .cam:focus-within{outline:2px solid var(--team);outline-offset:2px}
+.cam.proofview{cursor:default;min-height:120px;margin:4px 0 8px;font-size:14px}
+.cam.proofview img{height:auto;max-height:300px;object-fit:contain;background:#fff}
 .decide-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .decide-grid button{background:#fff;color:var(--ink);border:1.5px solid var(--rule);border-radius:14px;padding:12px;text-align:left;display:grid;gap:2px}
 .decide-grid button small{font-weight:500;color:var(--ink-soft)}
@@ -326,6 +328,23 @@ body[data-mode="family"] .team .who{cursor:default}
 .cerr{color:var(--urgent);font-size:13px}
 .cstat{font-size:14px;color:var(--muted);margin:4px 0 14px;line-height:1.4}
 .cstat b{color:var(--text)}
+/* The connector: my AI assistants */
+.conns{display:grid;gap:8px;margin:0 0 14px}
+.conns h4{margin:4px 0 0;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.conns .clist{display:grid;gap:6px}
+.conns .conn{display:grid;grid-template-columns:22px 1fr auto;gap:10px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:9px 11px;cursor:pointer}
+.conns .conn.none{grid-template-columns:22px 1fr}
+.conns .conn b{font-size:15px}
+.conns .conn small{display:block;color:var(--muted);font-size:12px}
+.conns .conn button{font-size:12px;padding:5px 10px}
+.conns .doer{font-style:normal;font-size:11px;font-weight:700;background:var(--agent);color:#fff;border-radius:999px;padding:2px 8px;margin-left:4px;vertical-align:2px}
+.conns .newconn{background:var(--surface);border:1px dashed var(--agent);border-radius:14px;padding:12px;display:grid;gap:8px}
+.conns .newconn input{font:inherit;font-size:12.5px;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--text);width:100%;min-width:0}
+.conns .newconn ol{margin:0;padding-left:20px;font-size:13px;line-height:1.45}
+.conns .newconn small{color:var(--muted)}
+.conns .presets{display:flex;flex-wrap:wrap;gap:6px}
+.conns .presets button{font-size:12.5px;padding:5px 11px}
+.aresult{white-space:pre-wrap;overflow-wrap:anywhere}
 .sheet .actions{margin-top:4px}
 .checks{list-style:none;margin:0;padding:0;display:grid;gap:3px;font-size:13.5px;font-weight:600}
 .checks .ok{color:#1d6b45}
@@ -439,8 +458,13 @@ const person=k=>people.find(p=>p.id===k)||{id:k,n:String(k),i:String(k).slice(0,
 const nm=k=>{const p=people.find(p=>p.id===k);return p?p.n:String(k)};
 const isKid=k=>person(k).role==='kid',isParent=k=>person(k).role==='parent';
 const kidKeys=()=>people.filter(p=>p.role==='kid').map(p=>p.id),parentKeys=()=>people.filter(p=>p.role==='parent').map(p=>p.id);
-// AI agents: a parent's execution agent is Grok Bot (family mode, signed in). Only the handshake probe is wired to it.
-const agentOf=k=>isParent(k)?'Grok Bot':'your assistant';
+// AI agents. Family mode: each adult connects assistants (the connector) and picks ONE doer; a swiped-down card goes to
+// the doer (card.agentLabel records which). The Stage 1 handshake probe still goes to Grok Bot on its own path.
+// Demo mode keeps the sample wording.
+let conns=null;   // family mode: my connections [{id,label,is_doer,created_at,last_used_at}] (null = not loaded yet)
+const doerOf=()=>(conns||[]).find(x=>x.is_doer)||null;
+const agentOf=(k,c)=>c&&c.probe?'Grok Bot':mode==='family'?(c&&c.agentLabel)||(doerOf()&&k===meKey()?doerOf().label:'your assistant'):isParent(k)?'Grok Bot':'your assistant';
+const capFirst=s=>s?s[0].toUpperCase()+s.slice(1):s;
 const PH={5:['🌅','Bright and early'],6:['🌄','At the crack of dawn'],7:['☕','With my morning coffee'],8:['💼','Before the workday begins'],
   9:['🏢','First thing at work'],10:['🎯','Mid-morning mission'],11:['🔔','Before the lunch bell'],12:['🌮','Lunch o’clock'],
   13:['🍽️','Right after lunch'],14:['🌤️','Early afternoon'],15:['🍩','Afternoon pick-me-up'],16:['🏃','The afternoon home stretch'],
@@ -683,7 +707,7 @@ function why(c,n){
   let s=0;const r=[];
   if(c.dealt!=null){s+=6}
   if(c.probe){s+=20;if(!isReturned(c))r.push([20,`Stage 1 test · swipe down to send it to ${CLOUD.agent}`])} // the test card stays on top
-  if(isReturned(c)){const a=curAsg(c);s+=8;r.push([8,`${nm(a.to)} finished this · your review`])}
+  if(isReturned(c)){const a=curAsg(c);s+=8;r.push([8,`${capFirst(nm(a.to))} finished this · your review`])}
   else if(c.type==='return'){s+=8;r.push([8,`${nm(c.doneBy)} wants a thumbs-up`])}
   else if(c.sentBack){s+=6;r.push([6,`${nm(c.sentBack)} sent this back`])}
   else if(c.maker!==n&&c.kind==='chore'){s+=3}
@@ -854,7 +878,7 @@ function cardHTML(c,top){
   if(c.kind==='moment')return `${band(c)}<h2>${esc(c.t)}</h2>${c.note?`<p>${esc(c.note)}</p>`:''}
     <div class="next"><span>No rush, no reminders</span><span>💌</span></div>
     <div class="stamp do">Open</div><div class="stamp done">♥</div>`;
-  let body=c.note?`<p>${esc(c.note)}</p>`:'';
+  let body=isReturned(c)&&c.result&&c.result.text?`<p>${esc(c.result.text.length>180?c.result.text.slice(0,177)+'…':c.result.text)}</p>`:c.note?`<p>${esc(c.note)}</p>`:'';
   if(c.items){
     const show=c.items.slice(0,3),more=c.items.length-3,done=c.items.filter(i=>i.done).length;
     body+=`<ul class="mini">${show.map(i=>`<li class="${i.done?'x':''}">${i.done?'✓':'○'} ${esc(i.t)}</li>`).join('')}
@@ -873,7 +897,7 @@ function render(){
   // The assignee has now seen the card on top of their deck
   if(d[0]){const a=curAsg(d[0]);if(a&&a.to===viewer&&a.state==='sent'){setState(a,'seen');touch(d[0])}}
   buildPicker(d[0]);
-  $('agentLabel').lastChild.textContent=`${agentOf(viewer)} · ${viewer===meKey()&&agentConnected()?'connected':'not connected'}`;
+  {const top=d[0],probe=!!(top&&top.probe);$('agentLabel').lastChild.textContent=`${agentOf(viewer,top)} · ${probe?(viewer===meKey()&&agentConnected()?'connected':'not connected'):mode==='family'?(doerOf()?'your doer':'no doer picked yet'):'not connected'}`}
   $('cloudBtn').className='cloudbtn'+(agentConnected()?' on':'');$('cloudBtn').title=mode==='family'?`${me.display_name} · ${household.name}`:'Demo mode';
   save();
   renderMyDay();renderWaitBtn();if(!$('waitLayer').hidden)renderWaitSheet();
@@ -953,6 +977,7 @@ const STATE_WORD=(a,c)=>{
     return a.state==='not_sent'?'Not sent yet':a.state==='sent'?`Sent · ${nm(a.to)} started a run`:a.state==='seen'?`${nm(a.to)} acknowledged · working on it`
       :a.state==='needs_info'?`${nm(a.to)} has a question: ${k.blocker||'(no details)'}`:a.state==='delivery_failed'?`Delivery failed · HTTP ${k.http??'no reply'} · try again`:a.state}
   if(a.kind==='agent'&&c&&c.cloud&&c.cloud.error)return `Couldn’t reach the server · ${c.cloud.error}`;
+  if(a.kind==='agent'&&mode==='family'&&c&&!c.probe)return `With ${a.to}`;   // the connector: it sits in the doer's queue until it comes back
   return a.state==='not_sent'?(a.kind==='agent'&&agentConnected()&&a.by===meKey()?`Not sent — only the handshake probe is wired to ${nm(a.to)} yet`:`Not sent — ${nm(a.to)} isn’t connected`):a.state==='sent'?'Sent · not opened yet':a.state==='seen'?'Seen':a.state==='needs_info'?'Has a question for you':a.state};
 function renderWaitBtn(){
   const w=waitingFor(viewer),b=$('waitBtn');
@@ -972,7 +997,7 @@ function renderWaitSheet(){
           ${cloud?`<button type="button" data-a="refresh" data-id="${c.id}" ${c.cloud.sending?'disabled':''}>↻ Refresh</button><button type="button" data-a="resend" data-id="${c.id}" ${c.cloud.sending?'disabled':''}>${a.state==='delivery_failed'||c.cloud.error||!a.cloudId?'Try again':'Send again'}</button>`:''}
           <button type="button" data-a="back" data-id="${c.id}">↩ Take back</button>
           <button type="button" class="warn" data-a="drop" data-id="${c.id}">${dropArm===c.id?'Sure? Drop it':'Drop'}</button></div></div>`}).join('')
-      :`<div class="wempty">Nothing out right now. Swipe a card up to hand it off${isParent(viewer)?`, or down to park it for ${esc(agentOf(viewer))}`:''}.</div>`}</div>`;
+      :`<div class="wempty">Nothing out right now. Swipe a card up to hand it off${isParent(viewer)?`, or down to ${mode==='family'?(doerOf()?`send it to ${esc(doerOf().label)}`:'your assistant (pick a doer in Account)'):`park it for ${esc(agentOf(viewer))}`}`:''}.</div>`}</div>`;
   $('waitSheet').querySelectorAll('.wact button').forEach(b=>b.onclick=()=>waitAction(b.dataset.a,b.dataset.id));
 }
 async function waitAction(act,id){
@@ -1158,8 +1183,69 @@ function cloudReview(c){
     <ul class="checks">${Object.keys(names).map(x=>`<li class="${k[x]===true?'ok':'bad'}">${k[x]===true?'✓':'✗'} ${names[x]}</li>`).join('')}</ul>
     <div class="qtip"><span>${k.all_passed?'✅':'⚠️'}</span><span>${k.all_passed?'The server verified every check.':'Some checks failed. The result is recorded as it came in.'}${when?` Received ${esc(when)}.`:''}</span></div></div>`;
 }
-function openCloud(){if(busy)return;$('cloudLayer').hidden=false;renderCloudSheet()}
-function closeCloud(){$('cloudLayer').hidden=true;if(document.activeElement&&document.activeElement.blur)document.activeElement.blur()}
+/* ---------- The connector: my AI assistants (td_agent_token_*) ----------
+   Each adult may connect up to 5 assistants. A connection is a private URL with a token in it; the token is shown once
+   and acts exactly as this person. One connection is the doer: cards swiped down go to its queue. */
+const CONN_STORE=()=>'taskdeck.conns.'+(me&&me.id);
+const adultMe=()=>mode==='family'&&!!me&&me.role!=='kid'&&me.age_class!=='minor';
+function loadConnsCache(){conns=null;try{const v=JSON.parse(localStorage.getItem(CONN_STORE())||'null');if(Array.isArray(v))conns=v}catch(e){}}
+async function loadConns(){
+  if(!adultMe()){conns=[];return conns}
+  try{const r=await cloudRpc('td_agent_token_list',{});if(r&&r.ok){conns=r.connections||[];try{localStorage.setItem(CONN_STORE(),JSON.stringify(conns))}catch(e){}}}catch(e){}
+  return conns;
+}
+const connectorUrl=tok=>`${CLOUD.url}/functions/v1/td-mcp/${tok}`;
+let newConn=null,connForm=false;   // newConn: {label,url} shown once, right after it is made
+// Grok Bot as the doer: once the card is on the server, ring its webhook (td-user ring_doer) so it starts now.
+async function ringDoer(c,label){
+  for(let i=0;i<12;i++){                                              // the card has to reach the server first
+    const k=sync.known[c.id];if(k&&!k.err&&k.v>0&&k.j===canon(shared(c)))break;
+    if(c.holder!=='agent:'+meKey())return;                           // taken back meanwhile
+    await new Promise(r=>setTimeout(r,i?1000:200));clearTimeout(syncT);await syncTick();
+  }
+  try{const r=await cloudOp('ring_doer',{card_id:c.id});
+    if(r.rung&&r.accepted)addLog('var(--agent)',`🤖 ${label} is on “${c.t}”`);
+    else if(r.rung)addLog('var(--later)',`⚠ ${label} didn’t wake up (HTTP ${r.http_status??'no reply'}). “${c.t}” stays in its queue.`);
+  }catch(e){addLog('var(--later)',`⚠ Couldn’t wake ${label}. “${c.t}” stays in its queue.`)}
+  if(!busy)render();
+}
+function connSection(){
+  const list=conns||[],dr=doerOf(),when=t=>t?new Date(t).toLocaleString([],{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'never';
+  return `<div class="conns"><h4>🤖 AI assistants</h4>
+    <div class="sub">Cards you swipe down go to your doer. Every connected assistant can add, edit and hand out cards.</div>
+    ${newConn?`<div class="newconn"><small>Connector URL for <b>${esc(newConn.label)}</b> · shown only now</small>
+      <input id="ncUrl" readonly value="${esc(newConn.url)}" aria-label="Connector URL"><button type="button" class="pbtn" id="ncCopy">Copy URL</button>
+      <ol><li><b>Claude:</b> Settings → Connectors → Add custom connector → paste this URL.</li><li><b>Muse:</b> ask it to connect to this MCP server URL.</li><li><b>Grok Bot, ChatGPT:</b> add it as an MCP server / custom connector with this URL.</li></ol>
+      <small>Keep it private: it acts as you. Remove it here any time.</small></div>`:''}
+    ${list.length?`<div class="clist">${list.map(x=>`<label class="conn"><input type="radio" name="doer" value="${esc(x.id)}" ${x.is_doer?'checked':''}><span><b>${esc(x.label)}</b>${x.is_doer?' <i class="doer">Doer</i>':''}<small>Last used ${esc(when(x.last_used_at))}</small></span><button type="button" class="warn" data-rmconn="${esc(x.id)}">Remove</button></label>`).join('')}
+      <label class="conn none"><input type="radio" name="doer" value="" ${dr?'':'checked'}><span><b>No doer</b><small>Swiping down keeps the card in your deck</small></span></label></div>`
+      :`<div class="sub">${conns===null?'Loading…':'No assistants connected yet.'}</div>`}
+    ${connForm?`<form class="cform" id="ncForm"><div class="presets">${['Claude','Muse','Grok Bot','ChatGPT'].map(p=>`<button type="button" data-preset="${p}">${p}</button>`).join('')}</div>
+      <input id="ncLabel" maxlength="40" placeholder="Name it (e.g. Claude)" required><button type="submit" class="pbtn">Make the connector URL</button></form>`
+      :list.length<5?`<button type="button" id="cConnect">＋ Connect an AI assistant</button>`:'<div class="sub">5 connections is the most. Remove one to add another.</div>'}</div>`;
+}
+function wireConns(){
+  const el=$('cloudSheet'),again=()=>{if(!$('cloudLayer').hidden)renderCloudSheet()};
+  const cc=$('cConnect');if(cc)cc.onclick=()=>{connForm=true;newConn=null;again();const i=$('ncLabel');if(i)i.focus()};
+  el.querySelectorAll('[data-preset]').forEach(b=>b.onclick=()=>{$('ncLabel').value=b.dataset.preset});
+  const nf=$('ncForm');if(nf)nf.onsubmit=async e=>{e.preventDefault();const lbl=$('ncLabel').value.trim();if(!lbl)return;
+    try{const r=await cloudRpc('td_agent_token_create',{p_label:lbl});if(!r.ok)throw new Error(r.error);
+      newConn={label:r.label,url:connectorUrl(r.token)};connForm=false;await loadConns();
+      if(!doerOf()&&conns.length===1){try{await cloudRpc('td_agent_token_set_doer',{p_id:r.id});await loadConns()}catch(x){}}   // the first one is the doer
+      addLog('var(--agent)',`🔌 Connected ${r.label}`);
+    }catch(x){toast(x.message==='too_many_connections'?'5 connections is the most':x.message==='adults_only'?'Assistants are for grown-ups for now':'Couldn’t make a connection')}
+    render();again()};
+  const cp=$('ncCopy');if(cp)cp.onclick=async()=>{try{await navigator.clipboard.writeText(newConn.url);toast('Copied. Paste it into your assistant.')}catch(e){$('ncUrl').select();toast('Select and copy the URL')}};
+  el.querySelectorAll('input[name=doer]').forEach(r=>r.onchange=async()=>{
+    try{const x=await cloudRpc('td_agent_token_set_doer',{p_id:r.value||null});if(!x.ok)throw new Error(x.error);await loadConns();const d=doerOf();toast(d?`${d.label} is your doer`:'No doer: swiped-down cards stay in your deck')}catch(e){toast('Couldn’t change the doer')}
+    render();again()});
+  el.querySelectorAll('[data-rmconn]').forEach(b=>b.onclick=async e=>{e.preventDefault();const x=(conns||[]).find(c=>c.id===b.dataset.rmconn);
+    if(!confirm(`Remove ${x?x.label:'this assistant'}? Its URL stops working right away.`))return;
+    try{const r=await cloudRpc('td_agent_token_revoke',{p_id:b.dataset.rmconn});if(!r.ok)throw new Error(r.error);newConn=null;await loadConns();toast('Removed');addLog('var(--muted)',`🔌 Removed ${x?x.label:'an assistant'}`)}catch(e){toast('Couldn’t remove it')}
+    render();again()});
+}
+function openCloud(){if(busy)return;newConn=null;connForm=false;$('cloudLayer').hidden=false;renderCloudSheet();if(adultMe())loadConns().then(()=>{if(!$('cloudLayer').hidden&&!newConn)renderCloudSheet()})}
+function closeCloud(){$('cloudLayer').hidden=true;newConn=null;connForm=false;if(document.activeElement&&document.activeElement.blur)document.activeElement.blur()}
 function renderCloudSheet(){   // the Account sheet (family mode) or the demo note (demo mode)
   const el=$('cloudSheet');
   if(mode!=='family'||!me){
@@ -1170,12 +1256,14 @@ function renderCloudSheet(){   // the Account sheet (family mode) or the demo no
   const c=probeCard(),a=c&&curAsg(c),k=c&&c.cloud,parent=me.role==='parent',admin=isAdmin();
   const line=!parent?'':!c?`Handshake probe: <b>not in your deck</b>`:k&&a&&a.kind==='agent'&&(a.cloudId||k.sending||k.error)?`Handshake probe: <b>${esc(a.state==='returned'?`back for your review · ${checksWord(k.result)}`:STATE_WORD(a,c))}</b>`:`Handshake probe: <b>in your deck, not sent yet</b>`;
   el.innerHTML=`<div class="grab"></div><h3 id="cloudH">${esc(me.display_name)} · ${esc(household.name)}</h3><div class="sub">${esc(me.role==='parent'?'Parent':me.role==='kid'?'Kid':'Family')}${admin?' · manages the household':''} · signed in${auth.user.email?' as '+esc(auth.user.email):' on this device'}</div>
-    <div class="cstat">🔄 Shared cards: <b>${esc(sync.err?`couldn’t reach the server (${sync.err})`:sync.at?`up to date as of ${new Date(sync.at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}`:'syncing…')}</b> · ${cards.filter(syncable).length} in play, ${archive.length} finished<br>${parent?`🤖 ${esc(CLOUD.agent)}: <b>connected</b> (only the handshake probe is wired up yet)<br>${line}`:`🤖 ${esc(CLOUD.agent)} is available to parents.`}</div>
+    <div class="cstat">🔄 Shared cards: <b>${esc(sync.err?`couldn’t reach the server (${sync.err})`:sync.at?`up to date as of ${new Date(sync.at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}`:'syncing…')}</b> · ${cards.filter(syncable).length} in play, ${archive.length} finished<br>${parent?`🤖 ${esc(CLOUD.agent)}: <b>connected</b> (the handshake probe)<br>${line}`:`🤖 ${esc(CLOUD.agent)} is available to parents.`}</div>
+    ${adultMe()?connSection():''}
     <div class="actions">${admin?`<button type="button" id="cFamily">👨‍👩‍👧 Family</button>`:''}${parent&&!c?`<button type="button" id="cProbe">＋ Add the handshake probe</button>`:''}<button type="button" id="cRefresh">↻ Refresh</button><button type="button" class="quiet" id="cOut">Sign out</button></div>`;
   const cp=$('cProbe');if(cp)cp.onclick=()=>{ensureProbeCard();render();closeCloud();toast('Probe card added to the top of the deck')};
   const cf=$('cFamily');if(cf)cf.onclick=()=>{closeCloud();openFamily()};
   $('cRefresh').onclick=async()=>{const b=$('cRefresh');b.disabled=true;try{await loadMe();if(parent)await syncProbe();clearTimeout(syncT);await syncTick();if(sync.err)throw new Error(sync.err);render();toast('Up to date')}catch(e){toast(e.message==='sign_in_required'?'Signed out':'Couldn’t reach the server')}renderCloudSheet()};
   $('cOut').onclick=async()=>{closeCloud();await signOut();leaveToWelcome()};
+  if(adultMe())wireConns();
 }
 $('cloudBtn').onclick=openCloud;$('cloudScrim').onclick=closeCloud;
 /* ---------- Identity: who is signed in, the household, and the welcome screen ----------
@@ -1219,6 +1307,7 @@ async function syncTick(){
     const d0=nowDay();now=Math.max(now,realNow());if(nowDay()!==d0)closeDays(d0,nowDay());   // the family clock is the real clock
     if(cards.some(c=>c.slot&&c.slot.day*DAY+c.slot.start<=now)){wakeCards();woke=true}
     await syncPush();
+    if(sync.clear&&sync.clear.length)await clearProofs();                // photos of decided chores: deleted once the decision is on the server
     changed=await syncPull();
     sync.err=null;sync.at=Date.now();
     {const live=new Set(cards.concat(archive).map(c=>c.id));for(const id in sync.known)if(!live.has(id))delete sync.known[id]}   // forget cards the archive has let go of
@@ -1279,7 +1368,7 @@ const normalize=srv=>{const n=mk({t:'',...srv});if(!Array.isArray(n.asg))n.asg=[
 function applyServer(row,why){
   const srv=normalize(JSON.parse(canon(row.card))),j=canon(shared(srv));sync.known[row.id]={v:row.version,j};   // confirmed copy = the normalised one, so filling in defaults never counts as a change
   let c=cards.find(x=>x.id===row.id)||archive.find(x=>x.id===row.id);
-  const before=c?{holder:c.holder,status:c.status,nudge:c.nudge&&c.nudge.at,okAt:c.approval&&c.approval.at,okDone:!!(c.approval&&c.approval.decided)}:null;
+  const before=c?{holder:c.holder,status:c.status,nudge:c.nudge&&c.nudge.at,okAt:c.approval&&c.approval.at,okDone:!!(c.approval&&c.approval.decided),again:c.tryAgain&&c.tryAgain.at}:null;
   if(c&&canon(shared(c))===j)return false;
   if(c){for(const k of Object.keys(c))delete c[k];Object.assign(c,srv)}else c=srv;
   const done=c.status==='done'||c.status==='dropped';
@@ -1295,12 +1384,18 @@ function applyServer(row,why){
   if(ap&&!ap.decided&&me&&me.role==='parent'&&ap.by!==viewer&&(!before||before.okAt!==ap.at)){
     const msg=`${nm(ap.by)} wants to hand “${c.t}” to ${nm(ap.to)} · OK?`;addLog('var(--team)',msg);toast(msg);return true;
   }
-  if(!done&&c.holder===viewer&&(!before||before.holder!==viewer)){                 // it just landed in my deck
+  if(done&&c.status==='done'&&c.kind==='chore'&&c.doneBy===viewer)ledger.forEach(l=>{if(l.grp===c.id)l.ok=true});   // a parent's thumbs-up: the points count
+  if(!done&&c.holder===viewer&&c.tryAgain&&c.tryAgain.by!==viewer&&(!before||before.again!==c.tryAgain.at)){       // a parent asked for a retake
+    fresh.add(c.id);ledger=ledger.filter(l=>l.grp!==c.id);
+    const lines=[`Nice try 😄 ${nm(c.tryAgain.by)} wants another photo of “${c.t}”`,`So close! 📸 ${nm(c.tryAgain.by)} asked for a retake of “${c.t}”`,`Plot twist: ${nm(c.tryAgain.by)} wants one more look at “${c.t}” 📸`];
+    const msg=lines[(c.tryAgain.at||0)%lines.length];addLog('var(--team)',msg);toast(msg);
+  }else if(!done&&c.holder===viewer&&(!before||before.holder!==viewer)){                 // it just landed in my deck
     fresh.add(c.id);
     const a=curAsg(c),from=isReturned(c)?c.doneBy:c.kind==='moment'?c.maker:c.sentBack||(a&&a.by!==viewer?a.by:c.maker);
     const msg=isReturned(c)?`${nm(from)} finished “${c.t}” · your review`:c.kind==='moment'?`💌 A moment from ${nm(from)}`:c.sentBack?`${nm(from)} sent “${c.t}” back`:`${nm(from)} handed you “${c.t}”`;
     addLog(isReturned(c)?'var(--do)':c.kind==='moment'?'var(--pink)':'var(--team)',msg);toast(msg);
   }else if(!done&&c.nudge&&c.holder===viewer&&(!before||before.nudge!==c.nudge.at)){addLog('var(--team)',`👋 ${nm(c.nudge.by)} nudged you about “${c.t}”`);toast(`${nm(c.nudge.by)} nudged you about “${c.t}”`)}
+  else if(done&&c.status==='done'&&c.kind==='chore'&&c.doneBy===viewer&&before&&before.status!==c.status&&by){const m=`👍 ${by} gave you a thumbs-up for “${c.t}”`;addLog('var(--do)',m);toast(m)}
   else if(done&&before&&before.status!==c.status&&by)addLog(c.kind==='moment'?'var(--pink)':c.status==='done'?'var(--do)':'var(--muted)',c.kind==='moment'?`💌 ${by} got your moment`:c.status==='done'?`✓ ${by} closed “${c.t}”`:`${by} dropped “${c.t}”`);
   else if(before&&before.holder===viewer&&c.holder!==viewer&&by)addLog('var(--muted)',`${by} took “${c.t}” back`);
   else if(why==='stale')toast(`“${c.t}” changed on ${by?by+'’s':'another'} phone · showing the latest`);
@@ -1329,11 +1424,12 @@ function startDemo(){
 function startFamily(){
   STORE='taskdeck.family.'+me.id;enterMode('family');
   if(!load())seedFamily();viewer=me.id;                                   // you are always you, whatever the cache says
+  loadConnsCache();if(adultMe())loadConns().then(()=>{if(!busy)render()});else conns=[];   // who my doer is (for swipe-down)
   wakeCards();runDeals();setQaPlaceholder();render();renderLog();
   scheduleSync(0);                                                        // share what's here, fetch what's new
   if(me.role==='parent'){syncProbe().then(sv=>{if(sv&&!busy)render()}).catch(()=>{}).finally(()=>schedulePoll(5000))}
 }
-function leaveToWelcome(){clearTimeout(pollT);clearTimeout(syncT);me=null;household=null;labels={};people=DEMO_PEOPLE;enterMode('welcome');renderWelcome()}
+function leaveToWelcome(){clearTimeout(pollT);clearTimeout(syncT);conns=null;newConn=null;me=null;household=null;labels={};people=DEMO_PEOPLE;enterMode('welcome');renderWelcome()}
 async function boot(){
   if(!auth){enterMode('welcome');renderWelcome();return}
   try{const sv=await loadMe();if(sv)startFamily();else{enterMode('join');renderWelcome()}}
@@ -1714,7 +1810,7 @@ function notNow(card,c){
 
 /* ---------- Outcomes ---------- */
 function flyRight(card,ph,done){tween(650,p=>{const e=p*(.55+.45*p);paint(card,{x:lerp(ph.x,window.innerWidth*1.3,e),a:lerp(ph.a,140,e),op:p>.6?1-(p-.6)/.4:1})},done)}
-const UNDO_LABEL=(c,a,arg)=>({done:`Done: ${c.t}`,accept:`Accepted: ${c.t}`,later:`Put off: ${c.t}`,team:`Handed to ${nm(arg)}: ${c.t}`,agent:`${c.probe&&viewer===meKey()&&agentConnected()?'Sent to':'Parked for'} ${agentOf(viewer)}: ${c.t}`,drop:`Let go: ${c.t}`,bottom:`To the bottom: ${c.t}`})[a]||c.t;
+const UNDO_LABEL=(c,a,arg)=>({done:`Done: ${c.t}`,accept:`Accepted: ${c.t}`,later:`Put off: ${c.t}`,team:`Handed to ${nm(arg)}: ${c.t}`,agent:`${(c.probe&&viewer===meKey()&&agentConnected())||(mode==='family'&&!c.probe)?'Sent to':'Parked for'} ${agentOf(viewer,mode==='family'&&!c.probe&&doerOf()?{agentLabel:doerOf().label}:c)}: ${c.t}`,drop:`Let go: ${c.t}`,bottom:`To the bottom: ${c.t}`})[a]||c.t;
 function commit(card,c,a,arg){
   snapUndo(c,a,UNDO_LABEL(c,a,arg));
   busy=true;card._flying=true;
@@ -1745,7 +1841,7 @@ function commit(card,c,a,arg){
       busy=false;card._flying=false;undoRec=null;render();toast(`Asked a parent to OK handing “${c.t}” to ${nm(to)}`);return;
     }
     const back=to===c.maker&&me!==c.maker;
-    const cur=openAsg(c),tm=asgTo(c,me);
+    const cur=openAsg(c),tm=asgTo(c,me),again=isReturned(c)&&!!cur&&cur.to===to&&c.kind==='chore'&&isKid(to);   // a parent asks a kid to try a chore again
     if(c.kind!=='moment'||mode==='family'){
       if(tm&&tm.by===to)setState(tm,'declined');                                  // sent back unfinished
       else if(isReturned(c)&&cur.to===to){setState(cur,'reopened');assignTo(c,to,'person','sent',me)} // "not quite", back to the same person
@@ -1753,7 +1849,8 @@ function commit(card,c,a,arg){
     }
     c.holder=to;c.sentBack=back?me:null;c.slot=null;c.nudged=false;c.nudge=null;c.handedAt=now;touch(c);fresh.add(c.id);stat(me,'handed');
     if(c.kind==='chore'&&isKid(to))c.proof=true;
-    addLog(isPrivate(c)?'var(--pink)':'var(--team)',isPrivate(c)?`💌 ${nm(me)} sent ${nm(to)} a moment`:back?`${nm(me)} sent “${c.t}” back to ${nm(to)}`:`${nm(me)} handed “${c.t}” to ${nm(to)}`);
+    if(again){c.tryAgain={by:me,at:Date.now()};if(c.proofPhoto){queueProofClear(c.id);c.proofPhoto=null}ledger=ledger.filter(l=>l.grp!==c.id)}
+    addLog(isPrivate(c)?'var(--pink)':'var(--team)',isPrivate(c)?`💌 ${nm(me)} sent ${nm(to)} a moment`:again?`${nm(me)} asked ${nm(to)} to try “${c.t}” again 📸`:back?`${nm(me)} sent “${c.t}” back to ${nm(to)}`:`${nm(me)} handed “${c.t}” to ${nm(to)}`);
     stage.classList.add('show-picker');chips[k].classList.add('on');
     const cc=chipCenter(k),T={x:cc.x-g.P.x,y:cc.y-g.P.y},side=T.x>=0?1:-1;
     tween(580,p=>{const e=1-Math.pow(1-p,2);
@@ -1761,10 +1858,30 @@ function commit(card,c,a,arg){
       ()=>{chips[k].classList.add('catch');setTimeout(()=>{stage.classList.remove('show-picker')},550);finish()});
     return;
   }
+  if(a==='agent'&&mode==='family'&&!c.probe){
+    // The connector: the card goes to my doer's queue (holder agent:<me>, one queue per person). The doer reads it
+    // through the Task Deck connector and hands it back with a result. Grok Bot is woken by its webhook; others pick
+    // the queue up when they next check. No doer yet: the card stays in the deck.
+    const d=doerOf();
+    if(!d){busy=false;card._flying=false;undoRec=null;render();
+      say(isKid(me)?`Assistants are for grown-ups for now. “${c.t}” stays in your deck.`:`Pick a doer first: Account (top right) → AI assistants. “${c.t}” stays in your deck.`,'info');return}
+    if(isReturned(c)){const cur=curAsg(c);if(cur&&cur.kind==='agent')setState(cur,'reopened')}   // "not quite": back to the assistant
+    c.holder='agent:'+me;c.agentLabel=d.label;c.slot=null;c.nudged=false;c.nudge=null;c.sentBack=null;c.handedAt=now;assignTo(c,d.label,'agent','sent',me);
+    const wake=/^grok/i.test(d.label);
+    addLog('var(--agent)',`🤖 ${nm(me)} sent “${c.t}” to ${d.label}`);
+    stage.classList.add('show-dock');slot.classList.add('open');
+    const Y=g.slotY-g.r.top+12;
+    tween(520,p=>{const y=lerp(ph.y,Y,easeIn(p));paint(card,{x:lerp(ph.x,0,p),y,a:lerp(ph.a,0,p),rx:lerp(ph.rx,-10,p),clip:slotClip(g,y)})},
+      ()=>{slot.classList.remove('open');finish();
+        say(`With ${d.label}. ${wake?'Waking it now…':'It picks this up the next time it checks your queue.'} It’s in Waiting on.`,'info');
+        if(wake)ringDoer(c,d.label);
+        setTimeout(()=>stage.classList.remove('show-dock'),1600)});
+    return;
+  }
   if(a==='agent'){
-    // Stage 1: the handshake probe really goes to Grok Bot when signed in. Any other card is parked as an
-    // assignment marked "not sent" (nothing is simulated), until later stages wire up real tasks.
-    const ag=agentOf(me),live=!!c.probe&&me===meKey()&&agentConnected();
+    // Stage 1: the handshake probe really goes to Grok Bot when signed in. In demo mode any other card is parked as an
+    // assignment marked "not sent" (nothing is simulated).
+    const ag=agentOf(me,c),live=!!c.probe&&me===meKey()&&agentConnected();
     c.holder='agent:'+me;c.slot=null;c.nudged=false;const asg=assignTo(c,ag,'agent','not_sent',me);
     if(live){c.cloud=Object.assign(c.cloud||{},{sending:true,error:null});addLog('var(--agent)',`${nm(me)} is sending “${c.t}” to ${ag}…`)}
     else addLog('var(--agent)',me===meKey()&&agentConnected()?`${nm(me)} parked “${c.t}” for ${ag} · not sent (only the handshake probe is wired up yet)`:`${nm(me)} parked “${c.t}” for ${ag} · not sent, ${ag} isn’t connected`);
@@ -1785,7 +1902,14 @@ function commit(card,c,a,arg){
     return;
   }
   if(a==='done'||a==='accept'){
-    const cur=openAsg(c),tm=asgTo(c,me),mine=!!tm&&tm.kind==='person'&&tm.by!==me&&people.some(p=>p.id===tm.by)&&c.kind!=='moment';
+    const cur=openAsg(c);let tm=asgTo(c,me),mine=!!tm&&tm.kind==='person'&&tm.by!==me&&people.some(p=>p.id===tm.by)&&c.kind!=='moment';
+    // Family mode: a kid's finished chore goes to a parent for a thumbs-up AS THE SAME CARD (returned for review, like
+    // a hand-off), so it reaches the parent's phone and the photo travels with it. A chore a parent handed over goes
+    // back to that parent; the kid's own or dealt chores go to the parent who made them, else the first parent.
+    const kidChore=a==='done'&&mode==='family'&&c.kind==='chore'&&!c.review&&isKid(me);
+    if(kidChore&&!mine){const ps=parentKeys(),par=ps.includes(c.maker)?c.maker:ps[0];
+      if(par){tm={id:uid(),to:me,kind:'person',state:'sent',at:now,by:par};c.asg=c.asg||[];c.asg.push(tm);mine=true}}
+    const kidReview=a==='accept'&&mode==='family'&&c.kind==='chore'&&!!cur&&isKid(cur.to);   // a parent's thumbs-up on a kid's chore
     if(a==='accept'){setState(cur,'accepted');stat(me,'closed')}
     if(c.kind==='moment'&&tm)setState(tm,'accepted');   // a moment is received, not reviewed: reading it closes the loop
     if(mine){
@@ -1809,16 +1933,25 @@ function commit(card,c,a,arg){
       parentKeys().forEach(par=>{const r=mk({type:'return',review:true,group:grp,kind:'chore',doneBy:me,t:c.t,tag:'Chore',maker:me,holder:par,mins:1,rule:'anytime',
         note:arg&&arg.photo?'Photo sent. Whoever gets to it first decides.':'Marked done.'});cards.push(r);fresh.add(r.id)});
       addLog('var(--do)',`${nm(me)} finished “${c.t}”${arg&&arg.photo?' 📸':''} · waiting on a parent’s thumbs-up`);
+    }else if(kidChore){
+      c.tryAgain=null;
+      ledger=ledger.filter(l=>l.grp!==c.id);ledger.push({who:me,t:c.t,mins:c.mins,day:nowDay(),grp:c.id,ok:false});   // counts once a parent approves
+      addLog('var(--do)',`${nm(me)} finished “${c.t}”${c.proofPhoto?' 📸':''} · waiting on ${nm(tm.by)}’s thumbs-up`);
+      say(`Done${c.proofPhoto?' 📸':''}. Sent to ${nm(tm.by)} for a thumbs-up.`,'info');
     }else if(mine){
       addLog('var(--do)',`${nm(me)} finished “${c.t}” · back to ${nm(tm.by)} for review`);
       say(`Done. Sent back to ${nm(tm.by)} to review.`,'info');
+    }else if(kidReview){
+      ledger=ledger.filter(l=>l.grp!==c.id);ledger.push({who:cur.to,t:c.t,mins:c.mins,day:nowDay(),grp:c.id,ok:true});
+      if(c.proofPhoto)queueProofClear(c.id);                               // deleted once this thumbs-up is on the server
+      addLog('var(--do)',`👍 ${nm(me)} gave ${nm(cur.to)} a thumbs-up for “${c.t}”`);say(`Thumbs-up sent to ${nm(cur.to)} 👍`,'info');
     }else if(a==='accept'){
       addLog('var(--do)',`✓ ${nm(me)} accepted ${nm(cur.to)}’s “${c.t}”`);say(`Accepted. Loop closed with ${nm(cur.to)} ✓`,'info');
     }else addLog('var(--do)',`${nm(me)} finished “${c.t}”`);
-    if(c.repeat&&c.dealt==null&&!mine){
+    if(c.repeat&&c.dealt==null&&(!mine||kidChore)&&!kidReview){              // a kid's repeating chore: the next one stays with the kid
       const d=nextOcc(c.repeat,nowDay()+1);
       const nx=mk({...c,id:uid(),asg:[],status:'snoozed',version:1,stamps:[],nudge:null,slot:{day:d,start:c.repeat.at??1140},born:now,handedAt:c.maker!==c.holder?now:null,sentBack:null,nudged:false,
-        items:c.items?c.items.map(i=>({t:i.t,done:false})):null});
+        items:c.items?c.items.map(i=>({t:i.t,done:false})):null,...(kidChore?{holder:me,handedAt:null,doneBy:null,proofPhoto:null,tryAgain:null}:{})});
       cards.push(nx);
       addLog('var(--do)',`🔁 Next “${c.t}”: ${dayName(d)}${d-nowDay()>6?', '+dateOf(d).toLocaleDateString([],{month:'short',day:'numeric'}):''}`);
     }
@@ -1842,8 +1975,15 @@ function quickPath(c){
   const links=(q&&q.links||[]).map(l=>`<a class="qlink" href="${esc(l.url)}" target="_blank" rel="noopener noreferrer"><span>${esc(l.label)}<small>${esc(l.note)}</small></span><span aria-hidden="true">↗</span></a>`).join('');
   const ready=q&&q.ready?`<div><div class="sub" style="margin-bottom:5px">Have ready</div><div class="qready">${q.ready.map(r=>`<span>${esc(r)}</span>`).join('')}</div></div>`:'';
   const tips=[et,...(q&&q.tips||[])].filter(Boolean).map(t=>`<div class="qtip"><span>💡</span><span>${esc(t)}</span></div>`).join('');
-  const ag=q&&q.agent?`<button type="button" class="qagent" id="qAgent">🤖 Park for ${esc(agentOf(viewer))} to ${esc(q.agent)}<small style="display:block;font-weight:500;color:var(--ink-soft)">${viewer===meKey()&&agentConnected()?'Not sent yet: only the handshake probe is wired up in this stage':`Not connected yet: it waits, unsent, until ${esc(agentOf(viewer))} is`}</small></button>`:'';
+  const ag=q&&q.agent?`<button type="button" class="qagent" id="qAgent">🤖 ${mode==='family'?'Send to':'Park for'} ${esc(agentOf(viewer,c))} to ${esc(q.agent)}<small style="display:block;font-weight:500;color:var(--ink-soft)">${mode==='family'?(doerOf()?'Your doer does it and sends it back for your review':'Pick a doer first: Account → AI assistants'):viewer===meKey()&&agentConnected()?'Not sent yet: only the handshake probe is wired up in this stage':`Not connected yet: it waits, unsent, until ${esc(agentOf(viewer,c))} is`}</small></button>`:'';
   return `<div class="qp"><div class="qph">⚡ Quick path</div>${links}${ready}${tips}${ag}</div>`;
+}
+// What an assistant handed back through the connector (card.result = {text, links, by, at}). Links: https only.
+function assistantResult(c,cur){
+  const r=c.result,links=(Array.isArray(r.links)?r.links:[]).filter(l=>l&&/^https:\/\//i.test(String(l.url)));
+  return `<div class="qp"><div class="qph">🤖 ${esc(r.by||nm(cur.to))} finished this</div><p class="aresult">${esc(String(r.text||''))}</p>
+    ${links.map(l=>`<a class="qlink" href="${esc(l.url)}" target="_blank" rel="noopener noreferrer"><span>${esc(l.label||l.url)}<small>${esc(String(l.url).replace(/^https:\/\//,'').slice(0,60))}</small></span><span aria-hidden="true">↗</span></a>`).join('')}
+    <div class="qtip"><span>👀</span><span>Check it, then Accept, or send it back with Not quite.</span></div></div>`;
 }
 function openWork(card,c){
   busy=true;
@@ -1867,23 +2007,26 @@ function openWork(card,c){
     return;
   }
   const ret=isReturned(c),cur=curAsg(c),cloud=ret&&!!cur.cloudId;   // cloud: returned by Grok Bot; the server holds the result
+  const kidDone=ret&&!cloud&&c.kind==='chore'&&isKid(cur.to),photo=kidDone&&mode==='family'&&!!c.proofPhoto;   // a kid's chore, back for a thumbs-up
   const tmw=asgTo(c,viewer);
   const from=!ret&&c.type==='task'&&c.dealt==null&&(tmw&&tmw.by!==viewer?tmw.by:c.maker!==viewer&&people.some(p=>p.id===c.maker)?c.maker:null);
   const draw=()=>{
     overlay.innerHTML=`<div class="sub">${esc(c.tag||'Task')} · ~${c.mins} min${c.repeat?' · 🔁 '+esc(repLabel(c.repeat)):''}${c.dealt!=null?' · 🎲 today’s deal':''}${from?` · from ${esc(nm(from))}`:''}${ret?` · done by ${esc(nm(cur.to))}`:''}</div>${ret||c.review?'':`<button type="button" class="editbtn" id="wEdit" aria-label="Edit this card">✎ Edit</button>`}
       <h2>${esc(c.t)}</h2>${c.note&&!cloud?`<p>${esc(c.note)}</p>`:''}
-      ${cloud?cloudReview(c):quickPath(c)}
+      ${photo?`<div class="cam proofview" id="wPhoto" aria-live="polite"><span>📸 Loading ${esc(nm(cur.to))}’s photo…</span></div>`:''}
+      ${cloud?cloudReview(c):ret&&c.result?assistantResult(c,cur):quickPath(c)}
       ${c.items?`<ul class="check">${c.items.map((it,k)=>`<li class="${it.done?'x':''}"><button type="button" data-k="${k}"><span class="box">${it.done?'✓':''}</span><span class="t">${esc(it.t)}</span></button></li>`).join('')}</ul>
         <form class="add" id="addForm"><input id="addItem" placeholder="Add an item" autocomplete="off"><button type="submit" class="pbtn">Add</button></form>`
         :c.next&&!c.qp&&!ret?`<p>Next step: <b style="color:var(--ink)">${esc(c.next)}</b></p>`:''}
       <div class="actions">
-        ${ret?`<button type="button" class="primary" id="wAccept">Accept ✓</button>${cloud?'':`<button type="button" class="warn" id="wAgain">Not quite: back to ${esc(nm(cur.to))}</button>`}`
+        ${ret?`<button type="button" class="primary" id="wAccept">${kidDone?'👍 Thumbs-up':'Accept ✓'}</button>${cloud?'':`<button type="button" class="warn" id="wAgain">${kidDone&&c.proof?'Try again 📸':`Not quite: back to ${esc(nm(cur.to))}`}</button>`}`
           :`<button type="button" class="primary" id="wDone">${c.proof?'Done 📸':'Done ✓'}</button>`}
         ${from?`<button type="button" class="warn" id="wBack">Send it back to ${esc(nm(from))}</button>`:''}
         <button type="button" class="quiet" id="wClose">Not now</button>
       </div>`;
     overlay.querySelectorAll('.check button').forEach(b=>b.onclick=()=>{const it=c.items[+b.dataset.k];it.done=!it.done;touch(c);draw()});
     const we=$('wEdit');if(we)we.onclick=()=>openEdit(c,draw);wsRedraw=draw;
+    if(photo)showProof(c);
     const f=$('addForm');if(f)f.onsubmit=e=>{e.preventDefault();const v=$('addItem').value.trim();if(v){c.items.push({t:v,done:false});draw();$('addItem').focus()}};
     const qa=$('qAgent');if(qa)qa.onclick=()=>{overlay.hidden=true;busy=false;commit(card,c,'agent')};
     if(ret){$('wAccept').onclick=async()=>{
@@ -1896,7 +2039,7 @@ function openWork(card,c){
         }
         overlay.hidden=true;busy=false;commit(card,c,'accept');if(cloud)undoRec=null; // accepted on the server: not undoable here
       };
-      const wa=$('wAgain');if(wa)wa.onclick=()=>{overlay.hidden=true;busy=false;commit(card,c,'team',cur.to)}}
+      const wa=$('wAgain');if(wa)wa.onclick=()=>{overlay.hidden=true;busy=false;cur.kind==='agent'?commit(card,c,'agent'):commit(card,c,'team',cur.to)}}
     else $('wDone').onclick=()=>{if(c.proof)return proveIt(card,c);overlay.hidden=true;busy=false;commit(card,c,'done')};
     if(from)$('wBack').onclick=()=>{overlay.hidden=true;busy=false;commit(card,c,'team',from)};
     $('wClose').onclick=()=>{overlay.hidden=true;busy=false;render()};
@@ -1947,19 +2090,82 @@ function openEdit(c,back){
   };
   draw=drawKeep;draw();
 }
+/* Prove it. Demo mode: the photo stays on this phone (preview only). Family mode: the photo is shrunk here (longest
+   side ~1280 px, JPEG ~0.7) and sent to td-proof before the chore counts as done; only a parent who is involved can
+   open it (a 5-minute link), and it is deleted as soon as they decide (and after 7 days at the latest). If sending
+   fails, the card stays open with the photo kept, so the kid can simply try again. The card itself only records
+   proofPhoto = {at}: no link or picture ever goes into the card. */
+const PROOF_PX=1280,PROOF_Q=.7,PROOF_MAX=1400000;
+async function shrinkPhoto(file){
+  let src=null,bmp=null;
+  try{bmp=await createImageBitmap(file,{imageOrientation:'from-image'});src=bmp}catch(e){}
+  if(!src)src=await new Promise((res,rej)=>{const u=URL.createObjectURL(file),i=new Image();i.onload=()=>{URL.revokeObjectURL(u);res(i)};i.onerror=()=>{URL.revokeObjectURL(u);rej(new Error('not_an_image'))};i.src=u});
+  const w=src.naturalWidth||src.width,h=src.naturalHeight||src.height;if(!w||!h)throw new Error('not_an_image');
+  const k=Math.min(1,PROOF_PX/Math.max(w,h)),cv=document.createElement('canvas');cv.width=Math.max(1,Math.round(w*k));cv.height=Math.max(1,Math.round(h*k));
+  const g=cv.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,cv.width,cv.height);g.drawImage(src,0,0,cv.width,cv.height);if(bmp&&bmp.close)bmp.close();
+  let q=PROOF_Q,d=cv.toDataURL('image/jpeg',q);
+  while(d.length*.75>PROOF_MAX&&q>.3){q-=.15;d=cv.toDataURL('image/jpeg',q)}
+  if(!/^data:image\/jpeg;base64,/.test(d))throw new Error('not_an_image');
+  return d.slice(d.indexOf(',')+1);
+}
+const proofOp=(op,cardId,extra)=>cloudFetch('/functions/v1/td-proof',{method:'POST',body:JSON.stringify({op,card_id:cardId,...(extra||{})})});
+// Push this phone's changes now (the server must know the card, held by this kid, before it takes the photo).
+async function pushNow(){while(syncBusy)await new Promise(r=>setTimeout(r,80));syncBusy=true;try{await syncPush()}finally{syncBusy=false}}
+// After a parent decides, the photo is deleted, once the decision itself is on the server (see syncTick).
+function queueProofClear(id){if(mode!=='family')return;sync.clear=sync.clear||[];if(!sync.clear.includes(id))sync.clear.push(id)}
+async function clearProofs(){
+  for(const id of (sync.clear||[]).slice()){
+    const c=cards.find(x=>x.id===id)||archive.find(x=>x.id===id),k=sync.known[id];
+    if(c&&(!k||k.err||k.j!==canon(shared(c))))continue;                // the decision isn't on the server yet
+    try{await proofOp('delete',id)}catch(e){if(!(e.status>=400&&e.status<500))continue}   // network: next tick; refused: nothing to do
+    sync.clear=sync.clear.filter(x=>x!==id);
+  }
+}
 function proveIt(card,c){
-  let url=null;
+  let url=null,file=null,b64=null,sending=false;
+  const fam=mode==='family';
   overlay.innerHTML=`<div class="sub">${esc(c.t)}</div><h2>Prove it 📸</h2>
     <p>Snap a photo of the finished job. It goes to Mom and Dad for a thumbs-up, then it’s deleted.</p>
     <label class="cam"><input type="file" accept="image/*" capture="environment" id="proof" aria-label="Take a photo"><span id="camTxt">📷 Tap to take the photo</span></label>
+    <p class="sub" id="pMsg" role="status" aria-live="polite"></p>
     <div class="actions"><button type="button" class="primary" id="pSend" disabled>Send for a thumbs-up</button><button type="button" class="quiet" id="pBack">Back</button></div>`;
+  const msg=t=>{$('pMsg').textContent=t};
+  const done=()=>{if(url)URL.revokeObjectURL(url);overlay.hidden=true;busy=false;c.tryAgain=null;commit(card,c,'done',{photo:true})};
   $('proof').onchange=e=>{
-    const f=e.target.files&&e.target.files[0];if(!f)return;
-    if(url)URL.revokeObjectURL(url);url=URL.createObjectURL(f);
-    $('camTxt').outerHTML=`<img src="${url}" alt="Your photo">`;$('pSend').disabled=false;
+    const f=e.target.files&&e.target.files[0];if(!f||sending)return;
+    if(url)URL.revokeObjectURL(url);url=URL.createObjectURL(f);file=f;b64=null;
+    const ci=$('camTxt')||overlay.querySelector('.cam img');ci.outerHTML=`<img src="${url}" alt="Your photo">`;$('pSend').disabled=false;msg('');
   };
-  $('pSend').onclick=()=>{if(url)URL.revokeObjectURL(url);overlay.hidden=true;busy=false;commit(card,c,'done',{photo:true})};
-  $('pBack').onclick=()=>{if(url)URL.revokeObjectURL(url);openWork(card,c)};
+  $('pSend').onclick=async()=>{
+    if(!fam)return done();                                              // demo: nothing leaves this phone
+    if(sending||!file)return;
+    sending=true;const b=$('pSend');b.disabled=true;b.textContent='Sending…';msg('');
+    try{
+      if(!b64)b64=await shrinkPhoto(file);
+      const k=sync.known[c.id];if(!k||!k.v||k.j!==canon(shared(c)))await pushNow();
+      if(c.holder!==viewer)throw Object.assign(new Error('moved'),{moved:true});
+      await proofOp('upload',c.id,{image_b64:b64});
+      c.proofPhoto={at:Date.now()};done();
+    }catch(e){
+      sending=false;
+      if(e.moved){if(url)URL.revokeObjectURL(url);overlay.hidden=true;busy=false;render();toast(`“${c.t}” changed on another phone`);return}
+      if(e.message==='sign_in_required')return;
+      b.disabled=false;b.textContent='Try sending again';
+      msg(e.message==='not_an_image'?'That picture didn’t work. Take another one?':e.message==='too_large'?'That photo is too big. Take another one?':'Couldn’t send the photo just now. Your chore isn’t lost: try again in a moment.');
+    }
+  };
+  $('pBack').onclick=()=>{if(sending)return;if(url)URL.revokeObjectURL(url);openWork(card,c)};
+}
+// A parent opening a kid's finished chore sees the photo: a 5-minute link fetched only now, never stored anywhere.
+const proofLinks={};   // card id@photo time → {url, until}: the short-lived link, in memory only, so a redraw doesn't fetch again
+async function showProof(c){
+  const key=c.id+'@'+(c.proofPhoto&&c.proofPhoto.at);                // a new photo for the same chore gets a new link
+  let t=proofLinks[key]&&proofLinks[key].until>Date.now()?proofLinks[key].url:null;
+  if(!t)try{const r=await proofOp('view',c.id);t=r&&r.url?r.url:null;if(t)proofLinks[key]={url:t,until:Date.now()+240000};if(!t){const b=$('wPhoto');if(b)b.innerHTML='<span>Photo already cleared</span>';return}}
+  catch(e){const b=$('wPhoto');if(b)b.innerHTML=`<span>${e.message==='not_allowed'?'Only Mom and Dad can see this photo':'Couldn’t load the photo. Close the card and open it again.'}</span>`;return}
+  const b=$('wPhoto');if(!b)return;
+  const img=new Image();img.alt=`${nm(c.doneBy)}’s photo of “${c.t}”`;img.onerror=()=>{b.innerHTML='<span>Photo already cleared</span>'};img.src=t;
+  b.replaceChildren(img);
 }
 function openDecide(card,c){
   busy=true;overlay.className=`overlay ${c.kind}`;
@@ -1968,7 +2174,7 @@ function openDecide(card,c){
     <div class="decide-grid">
       <button type="button" class="primary" id="dDo">Do it now<small>Open it up</small></button>
       <button type="button" id="dHand">Hand it off<small>Swipe up after this</small></button>
-      <button type="button" id="dAgent">Park for ${esc(agentOf(viewer))}<small>${viewer===meKey()&&agentConnected()?'Not sent: only the probe is wired up yet':'Not sent: not connected yet'}</small></button>
+      <button type="button" id="dAgent">${mode==='family'&&!c.probe?'Send to':'Park for'} ${esc(agentOf(viewer,c))}<small>${mode==='family'&&!c.probe?(doerOf()?'Your doer takes it from here':'Pick a doer in Account first'):viewer===meKey()&&agentConnected()?'Not sent: only the probe is wired up yet':'Not sent: not connected yet'}</small></button>
       <button type="button" id="dDrop">Let it go<small>Off the deck</small></button>
     </div>
     <div class="actions"><button type="button" class="quiet" id="dClose">Back to the deck</button></div>`;
