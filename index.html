@@ -274,6 +274,8 @@ h1{font-family:var(--display);font-weight:800;font-size:26px;letter-spacing:-.02
 .welcome{min-height:100dvh;display:flex;flex-direction:column;justify-content:center;gap:18px;max-width:420px;margin:0 auto;padding:32px 20px}
 .welcome h1{font-family:var(--display);font-weight:800;font-size:38px;letter-spacing:-.02em;margin:0}
 .welcome .tag{color:var(--muted);font-size:15px;margin:-10px 0 6px}
+.welcome .getapp{display:block;text-align:center;color:var(--ink);text-decoration:none;border:1px dashed var(--rule);border-radius:14px;padding:12px 14px;font-weight:600}
+.welcome .getapp small{display:block;font-weight:400;color:var(--muted);font-size:12px;margin-top:2px}
 .welcome .wbtns{display:grid;gap:10px}
 .welcome .wbtns button{padding:13px 16px;font-size:15px;border-radius:14px;text-align:left}
 .welcome .wbtns button.primary{background:var(--do);border-color:var(--do);color:#08301c}
@@ -297,7 +299,17 @@ body[data-mode="family"] .team .who{cursor:default}
 .fam .member .acts button{font-size:12px;padding:5px 10px}
 .fam .code{background:var(--surface);border:1px dashed var(--agent);border-radius:14px;padding:12px;text-align:center}
 .fam .code b{display:block;font-family:var(--display);font-size:30px;letter-spacing:.14em;color:var(--text);margin:4px 0}
-.fam .code small{color:var(--muted)}
+.fam .code small{display:block;color:var(--muted)}
+.fam .code b{font-size:34px}
+.fam .code .pbtn{margin:8px auto 6px;font-size:13px;padding:6px 14px}
+.fam .add.kids{grid-template-columns:1fr 1fr}
+/* Kid-to-kid hand-offs waiting on a parent's OK (parents only) */
+.oks{display:grid;gap:8px}
+.oks .okrow{background:var(--surface);border:1px solid var(--team);border-radius:16px;padding:10px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13.5px}
+.oks .okrow span{flex:1 1 180px}
+.oks .okrow .okb{flex:none;display:flex;gap:6px}
+.oks .okrow button{font:inherit;font-size:13px;padding:6px 12px;border-radius:999px;border:1.5px solid var(--line);background:transparent;color:var(--text);cursor:pointer}
+.oks .okrow button.primary{background:var(--team);border-color:var(--team);color:#fff}
 .fam .names{display:grid;gap:8px}
 .fam .names label{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:center;font-size:13.5px}
 .fam .names input,.fam select,.fam .add input{font:inherit;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--text);width:100%}
@@ -365,6 +377,7 @@ button:focus-visible,.mc:focus-visible,.wrow:focus-visible{outline:2px solid var
   <div class="team" id="team" aria-label="Your household"></div>
 
   <section id="deckView" style="display:flex;flex-direction:column;gap:14px">
+    <div class="oks" id="oks" hidden></div>
     <details class="myday" id="myday"></details>
     <div class="legend">
       <span><i style="background:var(--do)"></i><b>Swipe left</b>&nbsp;Do it</span>
@@ -549,6 +562,28 @@ const asgTo=(c,n)=>(c.asg||[]).filter(a=>a.to===n&&WAIT_STATES.includes(a.state)
 const myAsg=(c,n)=>(c.asg||[]).filter(a=>a.by===n&&WAIT_STATES.includes(a.state)).at(-1);
 function assignTo(c,to,kind,state,by){const a={id:uid(),to,kind,state,at:now,by:by||viewer};(c.asg=c.asg||[]).push(a);c.status='assigned';touch(c);return a}
 function setState(a,state){a.state=state;a.updated=now}
+// Kids phase: card.approval = {to, by, at, parents, decided?}. A kid asked a parent to OK handing this card to another
+// kid; the server fills in parents and lets only a parent decide. The first parent to answer decides for both.
+const pendingOk=c=>!!(c&&c.approval&&typeof c.approval==='object'&&!c.approval.decided);
+function renderOks(){
+  const el=$('oks');if(!el)return;
+  const list=mode==='family'&&me&&me.role==='parent'?cards.filter(c=>pendingOk(c)&&c.holder===c.approval.by):[];
+  el.hidden=!list.length;
+  el.innerHTML=list.map(c=>`<div class="okrow"><span>🤝 <b>${esc(nm(c.approval.by))}</b> wants to hand “${esc(c.t)}” to <b>${esc(nm(c.approval.to))}</b></span>
+    <span class="okb"><button type="button" class="primary" data-ok="${esc(c.id)}">OK</button><button type="button" data-notnow="${esc(c.id)}">Not now</button></span></div>`).join('');
+  el.querySelectorAll('[data-ok]').forEach(b=>b.onclick=()=>decideOk(b.dataset.ok,true));
+  el.querySelectorAll('[data-notnow]').forEach(b=>b.onclick=()=>decideOk(b.dataset.notnow,false));
+}
+function decideOk(id,ok){
+  if(busy||mode!=='family'||!me||me.role!=='parent')return;
+  const c=cards.find(x=>x.id===id);if(!pendingOk(c))return;
+  const a=c.approval,from=a.by,to=a.to;
+  a.decided={by:me.id,ok,at:Date.now()};
+  if(ok){assignTo(c,to,'person','sent',from);c.holder=to;c.slot=null;c.nudged=false;c.nudge=null;c.sentBack=null;c.handedAt=now;if(c.kind==='chore')c.proof=true}
+  touch(c);
+  const msg=ok?`OK’d: “${c.t}” goes from ${nm(from)} to ${nm(to)}`:`Not now: “${c.t}” stays with ${nm(from)}`;
+  addLog('var(--team)',msg);toast(msg);render();scheduleSync(300);
+}
 function archiveCard(c,status){const i=cards.indexOf(c);if(i>=0)cards.splice(i,1);c.status=status;touch(c);archive.unshift(c);if(archive.length>300)archive.length=300}
 const mk=o=>{const c={id:uid(),status:'open',asg:[],version:1,updatedAt:now,src:'app',kind:'task',type:'task',tag:'',note:'',next:'',items:null,stamps:[],slot:null,sentBack:null,doneBy:null,via:null,due:null,born:now,handedAt:null,nudged:false,repeat:null,proof:false,qp:null,dealt:null,poolId:null,group:null,review:false,nudge:null,...o};
   if(c.mins==null)c.mins=guessMins(c.t);if(!c.rule)c.rule=guessRule(c.t);return c};
@@ -661,8 +696,9 @@ function why(c,n){
   if(c.repeat&&!r.length)r.push([0,`🔁 ${repLabel(c.repeat)}`]);
   r.sort((a,b)=>b[0]-a[0]);return{score:s,reason:r[0]?r[0][1]:''};
 }
+let focusId=null;   // a card opened from a phone notification sits on top until it is acted on
 const deckOf=n=>cards.map((c,i)=>({c,i})).filter(x=>x.c.holder===n&&!x.c.slot)
-  .map(x=>({...x,s:why(x.c,n).score})).sort((a,b)=>b.s-a.s||a.i-b.i).map(x=>x.c);
+  .map(x=>({...x,s:why(x.c,n).score})).sort((a,b)=>(b.c.id===focusId)-(a.c.id===focusId)||b.s-a.s||a.i-b.i).map(x=>x.c);
 
 /* ---------- Placement ---------- */
 const busyOf=(n,d,skip)=>events(n,d).concat(cards.filter(c=>c!==skip&&c.holder===n&&c.slot&&c.slot.day===d).map(c=>({s:c.slot.start,e:c.slot.start+Math.max(5,c.mins)})));
@@ -805,6 +841,7 @@ function buildPicker(c){
 function band(c){
   const b=(cls,who,txt)=>`<div class="band ${cls}"><b><span>${esc(person(who).i)}</span></b>${txt}</div>`;
   if(c.dealt!=null)return `<div class="band deal">🎲 Today’s chore deal</div>`;
+  if(pendingOk(c))return b('from',c.approval.to,`For ${esc(nm(c.approval.to))} · waiting on a parent’s OK`);
   if(c.kind==='moment')return c.maker!==c.holder?b('moment',c.maker,`From ${esc(nm(c.maker))} · just for you`):'';
   if(isReturned(c)){const a=curAsg(c);return b('review',a.to,`Done by ${esc(nm(a.to))} · your review`)}
   if(c.type==='return')return b('done',c.doneBy,`Done by ${esc(nm(c.doneBy))}`);
@@ -831,7 +868,7 @@ function cardHTML(c,top){
     <div class="stamp do">Do it</div><div class="stamp done">Done ✓</div>`;
 }
 function render(){
-  renderClock();renderTeam();
+  renderClock();renderTeam();renderOks();
   const d=deckOf(viewer);
   // The assignee has now seen the card on top of their deck
   if(d[0]){const a=curAsg(d[0]);if(a&&a.to===viewer&&a.state==='sent'){setState(a,'seen');touch(d[0])}}
@@ -988,12 +1025,11 @@ const DEV=LOOPBACK.has(location.hostname);
 const devCloud=()=>{try{const u=new URL(QS.get('cloud')||'');return DEV&&/^https?:$/.test(u.protocol)&&LOOPBACK.has(u.hostname)?u.origin:null}catch(e){return null}};
 const CLOUD={url:devCloud()||PROD_URL,
   key:'sb_publishable_W-CtSgzyqB6KqtO4eIR5dw_1-RUEm5u',ref:'TD-PROBE-001',agent:'Grok Bot',
-  // Kids join with a one-time code on an anonymous login (no email). That needs the project's "Allow anonymous
-  // sign-ins" setting, which stays OFF during the two-adult pilot; the button is hidden until the kids phase.
-  kidCodes:DEV&&QS.get('kids')==='1',
-  // Pilot scope (R1.1, approved Oct 18): the public build only signs in existing household members. Household
-  // setup, codes, adding people and unlinking are switched off at the server as well (pilot_scope migration);
-  // the join screen and those controls are hidden. ?pilot=0 shows the full surface for local tests only.
+  // Kids (Stage 3) join with a one-time code from a parent: the td-kid function creates their login on the server
+  // (no email, no password, no anonymous sign-ins) and hands this phone its session.
+  // Pilot scope (R1.1, approved Oct 18): the public build only signs in existing household members; household
+  // setup and the adult join screen stay hidden. Since the kids phase, admins add kids, give codes and unlink
+  // from the Family sheet (the server checks every one of those itself). ?pilot=0 shows the full surface for local tests only.
   // The sample-family demo is off the public welcome screen; ?demo=1 keeps it for design reviews (no server use).
   pilot:!(DEV&&QS.get('pilot')==='0'),demo:QS.get('demo')==='1'};
 Object.freeze(CLOUD);
@@ -1199,35 +1235,66 @@ async function syncPush(){
     if(!syncable(c))continue;
     const j=canon(shared(c)),k=sync.known[c.id];
     if(k&&k.j===j)continue;
-    const r=await cloudRpc('td_card_put',{p_card:JSON.parse(j),p_expected_version:k?k.v:0});
+    let r;
+    try{r=await cloudRpc('td_card_put',{p_card:JSON.parse(j),p_expected_version:k?k.v:0})}
+    catch(e){if(e.status>=400&&e.status<500&&e.status!==401)r={error:'refused'};else throw e}   // the server rejected this card outright (4xx): don't let it block the others; network/auth: try again next tick
     if(r&&r.ok){sync.known[c.id]={v:r.version,j};continue}
     if(r&&r.error==='stale'){applyServer({id:c.id,version:r.version,card:r.card,by:r.by},'stale');continue}
     sync.known[c.id]={v:k?k.v:0,j,err:(r&&r.error)||'error'};      // refused for good: keep it here, retry only if it changes
     addLog('var(--later)',`⚠ “${c.t}” couldn’t be shared (${(r&&r.error)||'error'})`);
   }
 }
+// A server timestamp, moved back by ms, in a form every phone's Date can parse (microseconds trimmed).
+const earlier=(ts,ms)=>{const t=Date.parse(String(ts).replace(/(\.\d{3})\d+/,'$1'));return isNaN(t)?String(ts):new Date(t-ms).toISOString()};
+const SYNC_PAGE=500;   // the server returns at most this many changed cards per pull, oldest first
+// A pulled card can name someone this phone hasn't met yet (a parent just added a kid): refresh the household first,
+// at most every 20 s, so names and notes read right.
+let peopleAt=0;
+const UUID_RX=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const mentionsStranger=card=>{if(!card||typeof card!=='object')return false;const ap=card.approval&&typeof card.approval==='object'?card.approval:{};
+  const ks=[card.maker,String(card.holder||'').replace(/^agent:/,''),card.doneBy,card.sentBack,ap.by,ap.to,...(Array.isArray(card.asg)?card.asg.flatMap(a=>[a&&a.to,a&&a.by]):[])];
+  return ks.some(k=>typeof k==='string'&&UUID_RX.test(k)&&!people.some(p=>p.id===k))};
 async function syncPull(){
-  const r=await cloudRpc('td_cards_sync',{p_since:sync.since||'1970-01-01'});
-  if(!r||!r.ok)throw new Error((r&&r.error)||'sync failed');
-  let changed=false;
-  for(const row of r.cards||[]){const k=sync.known[row.id];if(k&&k.v>=row.version)continue;if(applyServer(row,'pull'))changed=true}
-  // The next pull starts 15 s before the server's clock, not at it: a write stamped just before this pull but
-  // committed just after it would otherwise never be seen. Rows seen twice are skipped by version above.
-  const t=Date.parse(String(r.now).replace(/(\.\d{3})\d+/,'$1'));sync.since=isNaN(t)?r.now:new Date(t-15000).toISOString();
+  let changed=false,since=sync.since||'1970-01-01';
+  for(let page=0;page<40;page++){                                       // a phone that has been away a long time catches up in pages
+    const r=await cloudRpc('td_cards_sync',{p_since:since});
+    if(!r||!r.ok)throw new Error((r&&r.error)||'sync failed');
+    const rows=r.cards||[];
+    if(rows.some(row=>mentionsStranger(row.card))&&Date.now()-peopleAt>20000){peopleAt=Date.now();try{await loadMe()}catch(e){}}
+    for(const row of rows){const k=sync.known[row.id];if(k&&k.v>=row.version)continue;if(applyServer(row,'pull'))changed=true}
+    if(rows.length<SYNC_PAGE){
+      // The next pull starts 15 s before the server's clock, not at it: a write stamped just before this pull but
+      // committed just after it would otherwise never be seen. Rows seen twice are skipped by version above.
+      sync.since=earlier(r.now,15000);break;
+    }
+    since=sync.since=earlier(rows[rows.length-1].updated_at,1);          // a full page: continue from its last card, never from the clock (cards after the page would be skipped)
+  }
   return changed;
 }
 // Take the server's copy of one card: replace ours in place (so an open card keeps its object), file it in the deck
 // or the archive, and tell the person what just happened to it.
+// A card from the server gets the same defaults a card made here gets (another phone, or an older build, may have
+// left fields out), so nothing downstream has to guess.
+const normalize=srv=>{const n=mk({t:'',...srv});if(!Array.isArray(n.asg))n.asg=[];if(!Array.isArray(n.stamps))n.stamps=[];if(!RULES[n.rule])n.rule='anytime';if(n.items&&!Array.isArray(n.items))n.items=null;if(typeof n.mins!=='number')n.mins=guessMins(n.t);return n};
 function applyServer(row,why){
-  const j=canon(row.card),srv=JSON.parse(j);sync.known[row.id]={v:row.version,j};
+  const srv=normalize(JSON.parse(canon(row.card))),j=canon(shared(srv));sync.known[row.id]={v:row.version,j};   // confirmed copy = the normalised one, so filling in defaults never counts as a change
   let c=cards.find(x=>x.id===row.id)||archive.find(x=>x.id===row.id);
-  const before=c?{holder:c.holder,status:c.status,nudge:c.nudge&&c.nudge.at}:null;
+  const before=c?{holder:c.holder,status:c.status,nudge:c.nudge&&c.nudge.at,okAt:c.approval&&c.approval.at,okDone:!!(c.approval&&c.approval.decided)}:null;
   if(c&&canon(shared(c))===j)return false;
   if(c){for(const k of Object.keys(c))delete c[k];Object.assign(c,srv)}else c=srv;
   const done=c.status==='done'||c.status==='dropped';
   if(done){const i=cards.indexOf(c);if(i>=0)cards.splice(i,1);if(!archive.includes(c)){archive.unshift(c);if(archive.length>300)archive.length=300}}
   else{const i=archive.indexOf(c);if(i>=0)archive.splice(i,1);if(!cards.includes(c))cards.push(c)}
   const by=row.by&&row.by!==viewer?nm(row.by):null;
+  const ap=c.approval&&typeof c.approval==='object'?c.approval:null;
+  if(ap&&ap.decided&&before&&!before.okDone&&ap.by===viewer){                      // a parent answered my request
+    const who=nm(ap.decided.by),msg=ap.decided.ok?`${who} said OK · “${c.t}” went to ${nm(ap.to)}`:`${who} said not now · “${c.t}” stays with you`;
+    addLog('var(--team)',msg);toast(msg);return true;
+  }
+  if(ap&&ap.decided&&why==='stale'&&ap.decided.by!==viewer){toast(`${nm(ap.decided.by)} already answered “${c.t}”`);return true}   // the other parent was first
+  if(ap&&!ap.decided&&me&&me.role==='parent'&&ap.by!==viewer&&(!before||before.okAt!==ap.at)){
+    const msg=`${nm(ap.by)} wants to hand “${c.t}” to ${nm(ap.to)} · OK?`;addLog('var(--team)',msg);toast(msg);return true;
+  }
   if(!done&&c.holder===viewer&&(!before||before.holder!==viewer)){                 // it just landed in my deck
     fresh.add(c.id);
     const a=curAsg(c),from=isReturned(c)?c.doneBy:c.kind==='moment'?c.maker:c.sentBack||(a&&a.by!==viewer?a.by:c.maker);
@@ -1240,13 +1307,13 @@ function applyServer(row,why){
   return true;
 }
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&mode==='family')scheduleSync(0)});
-// Children (and anyone without an email) sign in anonymously: a real account on this device, no email of any kind.
-// A parent's one-time family code then links it to the right person. Lost phone: the parent issues a new code.
-async function signInAnonymously(){
-  const r=await fetch(cloudPath('/auth/v1/signup'),{method:'POST',headers:hdr(false),body:'{}'});
-  const sv=await r.json().catch(()=>({}));
-  if(!r.ok||!sv.access_token)throw new Error(sv.error_description||sv.msg||sv.message||sv.error||'Couldn’t start a family-code sign-in. Ask a parent to check that family codes are turned on.');
-  auth=sessionOf(sv);saveAuth();
+// A kid signs in with the one-time code a parent gave them. The td-kid function checks the code, creates the kid's
+// own login on the server and returns its session; from here on the phone is that kid, exactly like a signed-in adult.
+async function claimKidCode(code){
+  const r=await fetch(cloudPath('/functions/v1/td-kid'),{method:'POST',headers:hdr(false),body:JSON.stringify({op:'claim',code})});
+  const s=await r.json().catch(()=>({}));
+  if(!r.ok||!s.ok||!s.session||!s.session.access_token)throw new Error(s.error==='invalid_or_expired_code'?'That code doesn’t work. Codes work once and last a day; ask a parent for a new one.':s.error==='too_many_attempts'?'Too many tries. Wait a few minutes, then try again.':'Couldn’t reach the server. Try again in a moment.');
+  auth=sessionOf(s.session);saveAuth();
 }
 function enterMode(m){mode=m;document.body.dataset.mode=m;$('welcome').hidden=!(m==='welcome'||m==='join');$('app').hidden=(m==='welcome'||m==='join');}
 function wakeCards(){const woke=cards.filter(c=>c.slot&&c.slot.day*DAY+c.slot.start<=now);woke.forEach(c=>{c.slot=null;c.status='open';fresh.add(c.id)})}
@@ -1308,19 +1375,18 @@ function renderWelcome(err){
   el.innerHTML=`<h1>Task Deck</h1><div class="tag">Your family’s deck. Swipe, hand off, done.</div>
     <div class="wbtns">
       <button type="button" class="primary" data-show="emailForm">Sign in<small>Parents: email and password</small></button>
-      ${CLOUD.kidCodes?`<button type="button" data-show="codeForm">I have a family code<small>Kids: no email needed</small></button>`:''}
+      <button type="button" data-show="codeForm">I have a code from a parent<small>Kids: no email needed</small></button>
       ${!CLOUD.pilot||CLOUD.demo?`<button type="button" id="wDemo">Try the demo<small>A sample family on this device only</small></button>`:''}
     </div>
     ${form('emailForm',`<h3>Sign in</h3><input id="wEmail" type="email" placeholder="Email" autocomplete="username" required><input id="wPass" type="password" placeholder="Password" autocomplete="current-password" required><div class="actions"><button type="submit" class="primary">Sign in</button></div>`)}
-    ${form('codeForm',`<h3>Join with a code</h3><p class="hint">Ask a parent for a code. It creates your own login on this phone; no email, no password to remember.</p><input id="jCode" placeholder="Family code" autocomplete="one-time-code" autocapitalize="characters" required><div class="actions"><button type="submit" class="primary">Join</button></div>`)}
+    ${form('codeForm',`<h3>Sign in with a code</h3><p class="hint">Ask a parent for a code. It makes your own login on this phone: no email, no password to remember.</p><input id="jCode" placeholder="8-character code" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" required><div class="actions"><button type="submit" class="primary">Join</button></div>`)}
     <div class="foot">${err?esc(err):'Nothing is shared outside your household.'}</div>`;
   el.querySelectorAll('[data-show]').forEach(b=>b.onclick=()=>{el.querySelectorAll('form').forEach(f=>f.hidden=f.id!==b.dataset.show);el.querySelector('#'+b.dataset.show+' input').focus()});
   const wd=$('wDemo');if(wd)wd.onclick=startDemo;
   $('emailForm').onsubmit=e=>{e.preventDefault();busyForm('emailForm',async()=>{await signIn($('wEmail').value.trim(),$('wPass').value);const sv=await loadMe();if(sv)startFamily();else{enterMode('join');renderWelcome()}})};
-  $('codeForm').onsubmit=e=>{e.preventDefault();busyForm('codeForm',async()=>{if(!auth)await signInAnonymously();
-    const r=await cloudRpc('td_family_claim_code',{p_code:$('jCode').value});
-    if(!r.ok)throw new Error(r.error==='invalid_or_expired_code'?'That code isn’t valid any more. Ask for a new one.':'Couldn’t join');
-    await loadMe();startFamily();toast(`Welcome, ${nm(me.id)}`)})};
+  $('codeForm').onsubmit=e=>{e.preventDefault();busyForm('codeForm',async()=>{await claimKidCode($('jCode').value.trim());
+    const sv=await loadMe();if(!sv){signOutLocal();throw new Error('That code didn’t finish signing you in. Ask a parent for a new one.')}
+    startFamily();toast(`Welcome, ${nm(me.id)}`)})};
 }
 // Runs a welcome-form action with the button disabled and errors shown under the form.
 function busyForm(id,fn){
@@ -1338,13 +1404,19 @@ function renderFamily(){
   const el=$('famSheet'),roleWord=r=>r==='parent'?'Parent':r==='kid'?'Kid':'Family';
   const vw=people.find(p=>p.id===famViewer)||people[0];
   const myLabels=(labels[vw.id]||{});
-  el.innerHTML=`<div class="grab"></div><h3 id="famH">${esc(household.name)}</h3><div class="sub">${CLOUD.pilot?'Who’s in the household, and what everyone calls each other. Adding people comes after the pilot.':'Who’s in the household, how they sign in, and what everyone calls each other.'+(CLOUD.kidCodes?'':' Kids’ logins come in a later phase; you can add them now.')}</div>
+  // Pilot build: codes and unlinking are for kids (minors) only; adults keep signing in with their email.
+  const kidSeat=p=>p.age==='minor'&&!p.admin;
+  const canCode=p=>p.id!==me.id&&!(p.admin&&p.linked)&&(!CLOUD.pilot||kidSeat(p)),canUnlink=p=>p.id!==me.id&&p.linked&&(!CLOUD.pilot||kidSeat(p));
+  const fc=famCode&&people.find(p=>p.id===famCode.person_id);
+  el.innerHTML=`<div class="grab"></div><h3 id="famH">${esc(household.name)}</h3><div class="sub">${CLOUD.pilot?'Who’s in the household, and what everyone calls each other. Add a kid here, then give them a code to sign in on their own phone.':'Who’s in the household, how they sign in, and what everyone calls each other.'}</div>
     <div class="fam">
-      ${famCode?`<div class="code"><small>One-time code for ${esc(nm(famCode.person_id))} · expires in 24 hours · shown once</small><b>${esc(famCode.code.slice(0,4))}-${esc(famCode.code.slice(4))}</b><small>They open Task Deck → “I have a family code”. Adults sign in first, then enter it.</small></div>`:''}
+      ${famCode?`<div class="code"><small>Sign-in code for ${esc(nm(famCode.person_id))}</small><b id="famCodeTxt">${esc(famCode.code.slice(0,4))}-${esc(famCode.code.slice(4))}</b><small>Works once · expires in 24 hours · shown only now</small>
+        <button type="button" class="pbtn" id="famCopy">Copy code</button>
+        <small>${fc&&kidSeat(fc)?'On their phone: open Task Deck → “I have a code from a parent”, type the code. No email needed.':'They sign in with their email first, then enter the code.'}</small></div>`:''}
       ${people.map(p=>`<div class="member ${p.g}"><span class="av">${esc(p.i)}</span><div><b>${esc(p.display_name)}${p.id===me.id?' (you)':''}</b><small>${roleWord(p.role)}${p.admin?' · admin':''}${p.age==='minor'?' · minor':''}${p.birth_year?' · born '+p.birth_year:''} · ${p.id===me.id?'signed in':p.linked?'has a login':'no login yet'}</small></div>
-        <div class="acts">${p.id===me.id||CLOUD.pilot?'':p.age==='minor'&&!CLOUD.kidCodes&&!p.linked?`<small>login later</small>`:`${p.admin&&p.linked?'':`<button type="button" data-code="${p.id}">${p.linked?'New code':'Code'}</button>`}${p.linked?`<button type="button" class="warn" data-unlink="${p.id}">Unlink</button>`:''}`}</div></div>`).join('')}
-      ${CLOUD.pilot?'':`<h4>Add someone</h4>
-      <form class="add" id="famAdd"><input id="faName" placeholder="First name" required><select id="faRole"><option value="kid">Kid</option><option value="parent">Parent</option><option value="relative">Family</option></select><input id="faYear" type="number" placeholder="Birth year (optional)" min="1900" max="2100"><button type="submit" class="pbtn" style="grid-column:1/-1">Add</button></form>`}
+        <div class="acts">${canCode(p)?`<button type="button" data-code="${p.id}">${p.linked?'New code':'Code'}</button>`:''}${canUnlink(p)?`<button type="button" class="warn" data-unlink="${p.id}">Unlink</button>`:''}</div></div>`).join('')}
+      <h4>Add someone</h4>
+      <form class="add${CLOUD.pilot?' kids':''}" id="famAdd"><input id="faName" placeholder="${CLOUD.pilot?'Kid’s first name':'First name'}" required>${CLOUD.pilot?'<input type="hidden" id="faRole" value="kid">':'<select id="faRole"><option value="kid">Kid</option><option value="parent">Parent</option><option value="relative">Family</option></select>'}<input id="faYear" type="number" placeholder="Birth year (optional)" min="1900" max="2100"><button type="submit" class="pbtn" style="grid-column:1/-1">Add</button></form>
       <h4>Names</h4>
       <div class="sub" style="margin:0 0 6px">What <select id="famViewerSel">${people.map(p=>`<option value="${p.id}" ${p.id===vw.id?'selected':''}>${esc(p.display_name)}${p.id===me.id?' (you)':''}</option>`).join('')}</select> calls each person. Blank = their name.</div>
       <div class="names">${people.filter(p=>p.id!==vw.id).map(p=>`<label><span>${esc(p.display_name)}</span><input data-label="${p.id}" value="${esc(myLabels[p.id]||'')}" placeholder="${esc(p.display_name)}"></label>`).join('')}</div>
@@ -1355,7 +1427,8 @@ function renderFamily(){
   el.querySelectorAll('[data-unlink]').forEach(b=>b.onclick=async()=>{if(!confirm(`Unlink ${nm(b.dataset.unlink)}’s login? They stay in the family; they’ll need a new code to sign in.${(people.find(p=>p.id===b.dataset.unlink)||{}).admin?' Any codes they issued stop working.':''}`))return;
     try{const r=await cloudRpc('td_family_unlink',{p_person:b.dataset.unlink});if(!r.ok)throw new Error(r.error);toast('Unlinked')}catch(e){toast('Couldn’t unlink')}refresh()});
   const fa=$('famAdd');if(fa)fa.onsubmit=async e=>{e.preventDefault();const n=$('faName').value.trim();if(!n)return;
-    try{const r=await cloudRpc('td_family_add_person',{p_display_name:n,p_initials:n.slice(0,2),p_role:$('faRole').value,p_birth_year:$('faYear').value?+$('faYear').value:null});if(!r.ok)throw new Error(r.error);toast(`${n} added.`+($('faRole').value==='kid'&&!CLOUD.kidCodes?' Kids’ logins come in a later phase.':' Give them a code to sign in.'))}catch(e){toast('Couldn’t add: '+(e.message||''))}refresh()};
+    try{const r=await cloudRpc('td_family_add_person',{p_display_name:n,p_initials:n.slice(0,2),p_role:$('faRole').value,p_birth_year:$('faYear').value?+$('faYear').value:null});if(!r.ok)throw new Error(r.error);toast(`${n} added. Tap Code to let them sign in.`)}catch(e){toast('Couldn’t add: '+(e.message||''))}refresh()};
+  const cp=$('famCopy');if(cp)cp.onclick=async()=>{try{await navigator.clipboard.writeText(famCode.code);toast('Code copied')}catch(e){toast('Couldn’t copy · read it out instead')}};
   $('famViewerSel').onchange=e=>{famViewer=e.target.value;renderFamily()};
   el.querySelectorAll('[data-label]').forEach(inp=>inp.onchange=async()=>{try{const r=await cloudRpc('td_family_set_name',{p_viewer:vw.id,p_subject:inp.dataset.label,p_label:inp.value.trim()});if(!r.ok)throw new Error(r.error);toast('Saved')}catch(e){toast('Couldn’t save that name')}refresh()});
   $('famClose').onclick=closeFamily;
@@ -1663,6 +1736,14 @@ function commit(card,c,a,arg){
   if(a==='team'){
     const to=arg,k=others.findIndex(p=>p.id===to);
     if(k<0){busy=false;card._flying=false;undoRec=null;render();toast('Couldn’t tell who that was for');return}   // never freeze on a bad target
+    // Kids phase: a kid can't hand a card straight to another kid. The card stays put and a parent is asked to OK it
+    // (the server enforces the same rule). Giving it back to the kid who made it or handed it over is still direct.
+    if(mode==='family'&&pendingOk(c)){busy=false;card._flying=false;undoRec=null;render();toast(`“${c.t}” is waiting on a parent’s OK`);return}
+    if(mode==='family'&&isKid(me)&&isKid(to)&&to!==c.maker&&!(c.asg||[]).some(x=>x.by===to)){
+      c.approval={to,by:me,at:Date.now(),parents:[]};touch(c);
+      addLog('var(--team)',`${nm(me)} asked a parent to OK handing “${c.t}” to ${nm(to)}`);
+      busy=false;card._flying=false;undoRec=null;render();toast(`Asked a parent to OK handing “${c.t}” to ${nm(to)}`);return;
+    }
     const back=to===c.maker&&me!==c.maker;
     const cur=openAsg(c),tm=asgTo(c,me);
     if(c.kind!=='moment'||mode==='family'){
@@ -1932,6 +2013,59 @@ document.addEventListener('keydown',e=>{
   if(e.key==='ArrowRight')notNow(top,c);
   if(e.key==='ArrowDown'&&c.kind!=='moment')commit(top,c,'agent');
 });
+
+/* ---------- Android app: notifications, opening a card from one, and the download link (Oct 19) ----------
+   Only active inside the Android app (window.TaskDeckAndroid, set by the Android bridge script) except the
+   welcome screen's "Get the Android app" link, which shows on the website only. The bridge owns the native
+   plugins; this block owns what they mean for Task Deck: which login a phone's push token belongs to, when
+   to ask for notification permission (the first time a hand-off is in play, never on first launch), and
+   which card a tapped notification opens. */
+(function(){
+  const A=()=>window.TaskDeckAndroid&&window.TaskDeckAndroid.isNative?window.TaskDeckAndroid:null;
+  const DL=CLOUD.url+'/functions/v1/td-download';
+  let token=null,registeredFor=null,asked=false;
+  const ASK_KEY='taskdeck.pushAsked';
+  try{asked=localStorage.getItem(ASK_KEY)==='1'}catch(e){}
+  async function register(){
+    if(!token||mode!=='family'||!me||!auth)return;
+    const k=me.id+'|'+token;if(registeredFor===k)return;
+    try{const r=await cloudRpc('td_push_register',{p_token:token,p_platform:'android'});if(r&&r.ok)registeredFor=k}catch(e){}
+  }
+  window.addEventListener('taskdeck:push-token',e=>{token=e.detail&&e.detail.token||null;register()});
+  window.addEventListener('taskdeck:open-card',e=>{
+    const id=e.detail&&e.detail.cardId;if(!id)return;
+    const go=()=>{const c=cards.find(x=>x.id===id);if(c&&c.holder===viewer){focusId=id;if(c.slot){c.slot=null;c.status='open'}fresh.add(id);if(!busy)render();return true}return false};
+    if(mode==='family'&&!go()){clearTimeout(syncT);syncTick().then(go).catch(()=>{})}
+  });
+  // Ask once, when hand-offs are actually in play for this person (sent or received), not on first launch.
+  function maybeAsk(){
+    const a=A();if(!a||mode!=='family'||!me)return;
+    if(asked){a.enablePush(false);return}                 // already asked: refresh the token silently if allowed
+    const inPlay=cards.concat(archive).some(c=>(c.asg||[]).some(x=>x.to===me.id||x.by===me.id));
+    if(!inPlay)return;
+    asked=true;try{localStorage.setItem(ASK_KEY,'1')}catch(e){}
+    a.enablePush(true);
+  }
+  setInterval(()=>{if(document.visibilityState==='visible')maybeAsk()},8000);
+  const _startFamily=startFamily;
+  startFamily=function(){_startFamily.apply(this,arguments);registeredFor=null;setTimeout(()=>{maybeAsk();register()},1500)};
+  const _signOut=signOut;
+  signOut=async function(){
+    if(token&&auth){try{await cloudRpc('td_push_unregister',{p_token:token})}catch(e){}}
+    registeredFor=null;return _signOut.apply(this,arguments);
+  };
+  // A card that was focused from a notification stops jumping the queue once it leaves the top.
+  setInterval(()=>{if(focusId){const d=deckOf(viewer);if(!d.length||d[0].id!==focusId)focusId=null}},4000);
+  const _renderWelcome=renderWelcome;
+  renderWelcome=function(){
+    _renderWelcome.apply(this,arguments);
+    if(A()||!/Android/i.test(navigator.userAgent||'')&&!DEV&&!QS.get('android'))return;   // website on Android phones (and ?android=1 for checks)
+    const el=$('welcome');if(!el||el.querySelector('.getapp'))return;
+    const a=document.createElement('a');a.className='getapp';a.href=DL;a.rel='noopener';
+    a.innerHTML='📲 Get the Android app<small>Install Task Deck on this phone</small>';
+    const foot=el.querySelector('.foot');el.insertBefore(a,foot||null);
+  };
+})();
 boot();
 </script>
 </body>
