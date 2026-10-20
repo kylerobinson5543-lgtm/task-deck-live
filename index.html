@@ -835,7 +835,7 @@ const stage=$('stage'),deck=$('deck'),picker=$('picker'),slot=$('slot'),agentLab
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const lerp=(a,b,t)=>a+(b-a)*t;
 const easeOut=p=>1-Math.pow(1-p,3),easeIn=p=>p*p;
-const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const PIVOT=41,DAMP=.68+.32*.26,AX=['a','x','y','rx'];
 function tween(D,fn,done){const t0=performance.now();const f=t=>{const p=Math.min(1,(t-t0)/D);fn(p);if(p<1)requestAnimationFrame(f);else if(done)done()};requestAnimationFrame(f)}
 function geo(){const r=deck.getBoundingClientRect(),sr=slot.getBoundingClientRect();
@@ -991,12 +991,12 @@ function renderWaitSheet(){
   $('waitSheet').innerHTML=`<div class="grab"></div><h3 id="waitH">Waiting on</h3><div class="sub">Cards you handed off that aren’t back yet. They’re the same cards, not copies.</div>
     <div class="wlist">${w.length?w.map(({c,a},i)=>{const agent=a.kind==='agent',holding=c.holder===a.to||c.holder==='agent:'+viewer,cloud=agent&&c.cloud&&(a.cloudId||c.cloud.sending||c.cloud.error);
       const nudged=c.nudge&&nowDay()===Math.floor(c.nudge.at/DAY);
-      return `<div class="wcard ${c.kind}" style="animation-delay:${i*45}ms"><div class="wtop"><span>${agent?'🤖':'→'} ${esc(nm(a.to))}${!holding&&!agent?` · now with ${esc(nm(c.holder))}`:''}</span><span>${ago(a.at)}</span></div>
-        <b>${esc(c.t)}</b><span class="wstate ${a.state}">${esc(STATE_WORD(a,c))}</span>
-        <div class="wact">${agent?'':`<button type="button" data-a="nudge" data-id="${c.id}" ${nudged?'disabled':''}>${nudged?'Nudged today':'👋 Nudge'}</button>`}
-          ${cloud?`<button type="button" data-a="refresh" data-id="${c.id}" ${c.cloud.sending?'disabled':''}>↻ Refresh</button><button type="button" data-a="resend" data-id="${c.id}" ${c.cloud.sending?'disabled':''}>${a.state==='delivery_failed'||c.cloud.error||!a.cloudId?'Try again':'Send again'}</button>`:''}
-          <button type="button" data-a="back" data-id="${c.id}">↩ Take back</button>
-          <button type="button" class="warn" data-a="drop" data-id="${c.id}">${dropArm===c.id?'Sure? Drop it':'Drop'}</button></div></div>`}).join('')
+      return `<div class="wcard ${esc(c.kind)}" style="animation-delay:${i*45}ms"><div class="wtop"><span>${agent?'🤖':'→'} ${esc(nm(a.to))}${!holding&&!agent?` · now with ${esc(nm(c.holder))}`:''}</span><span>${ago(a.at)}</span></div>
+        <b>${esc(c.t)}</b><span class="wstate ${esc(a.state)}">${esc(STATE_WORD(a,c))}</span>
+        <div class="wact">${agent?'':`<button type="button" data-a="nudge" data-id="${esc(c.id)}" ${nudged?'disabled':''}>${nudged?'Nudged today':'👋 Nudge'}</button>`}
+          ${cloud?`<button type="button" data-a="refresh" data-id="${esc(c.id)}" ${c.cloud.sending?'disabled':''}>↻ Refresh</button><button type="button" data-a="resend" data-id="${esc(c.id)}" ${c.cloud.sending?'disabled':''}>${a.state==='delivery_failed'||c.cloud.error||!a.cloudId?'Try again':'Send again'}</button>`:''}
+          <button type="button" data-a="back" data-id="${esc(c.id)}">↩ Take back</button>
+          <button type="button" class="warn" data-a="drop" data-id="${esc(c.id)}">${dropArm===c.id?'Sure? Drop it':'Drop'}</button></div></div>`}).join('')
       :`<div class="wempty">Nothing out right now. Swipe a card up to hand it off${isParent(viewer)?`, or down to ${mode==='family'?(doerOf()?`send it to ${esc(doerOf().label)}`:'your assistant (pick a doer in Account)'):`park it for ${esc(agentOf(viewer))}`}`:''}.</div>`}</div>`;
   $('waitSheet').querySelectorAll('.wact button').forEach(b=>b.onclick=()=>waitAction(b.dataset.a,b.dataset.id));
 }
@@ -1364,8 +1364,10 @@ async function syncPull(){
 // or the archive, and tell the person what just happened to it.
 // A card from the server gets the same defaults a card made here gets (another phone, or an older build, may have
 // left fields out), so nothing downstream has to guess.
-const normalize=srv=>{const n=mk({t:'',...srv});if(!Array.isArray(n.asg))n.asg=[];if(!Array.isArray(n.stamps))n.stamps=[];if(!RULES[n.rule])n.rule='anytime';if(n.items&&!Array.isArray(n.items))n.items=null;if(typeof n.mins!=='number')n.mins=guessMins(n.t);return n};
+const SAFE_ID=/^[A-Za-z0-9-]{8,64}$/,KINDS=['task','chore','moment'];
+const normalize=srv=>{const n=mk({t:'',...srv});if(!KINDS.includes(n.kind))n.kind='task';if(Array.isArray(n.asg))n.asg=n.asg.filter(a=>a&&typeof a==='object').map(a=>({...a,state:/^[a-z_]{1,20}$/.test(String(a.state))?a.state:'sent'}));if(!Array.isArray(n.asg))n.asg=[];if(!Array.isArray(n.stamps))n.stamps=[];if(!RULES[n.rule])n.rule='anytime';if(n.items&&!Array.isArray(n.items))n.items=null;if(typeof n.mins!=='number')n.mins=guessMins(n.t);return n};
 function applyServer(row,why){
+  if(!row||!SAFE_ID.test(String(row.id))||!row.card||String(row.card.id)!==String(row.id))return false;   // never render a card with an unsafe id
   const srv=normalize(JSON.parse(canon(row.card))),j=canon(shared(srv));sync.known[row.id]={v:row.version,j};   // confirmed copy = the normalised one, so filling in defaults never counts as a change
   let c=cards.find(x=>x.id===row.id)||archive.find(x=>x.id===row.id);
   const before=c?{holder:c.holder,status:c.status,nudge:c.nudge&&c.nudge.at,okAt:c.approval&&c.approval.at,okDone:!!(c.approval&&c.approval.decided),again:c.tryAgain&&c.tryAgain.at}:null;
@@ -2133,6 +2135,8 @@ function proveIt(card,c){
   const done=()=>{if(url)URL.revokeObjectURL(url);overlay.hidden=true;busy=false;c.tryAgain=null;commit(card,c,'done',{photo:true})};
   $('proof').onchange=e=>{
     const f=e.target.files&&e.target.files[0];if(!f||sending)return;
+    // A fresh camera photo has a "last modified" time of right now; a picture picked from the gallery is older.
+    if(fam&&isKid(viewer)&&f.lastModified&&Date.now()-f.lastModified>5*60*1000){e.target.value='';msg('That looks like an older photo. Take a new one of the finished job 📸');return}
     if(url)URL.revokeObjectURL(url);url=URL.createObjectURL(f);file=f;b64=null;
     const ci=$('camTxt')||overlay.querySelector('.cam img');ci.outerHTML=`<img src="${url}" alt="Your photo">`;$('pSend').disabled=false;msg('');
   };
