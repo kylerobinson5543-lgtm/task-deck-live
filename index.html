@@ -502,8 +502,9 @@ const KB=[[330,375,'Gym'],[420,480,'Breakfast and drop-off'],[510,570,'Client re
 const KC=[[480,540,'Pancake breakfast'],[540,630,'Boys’ game'],[720,780,'Errands'],[900,960,'Yard work'],[1080,1140,'Family dinner'],[1230,1260,'Bedtime routine']];
 const kyleDay=d=>isWeekend(d)?KC:(((d%2)+2)%2?KB:KA);
 let extras=[]; // one-off calendar events: {n,day,s,e,t,away}
+var calBusy=null,calBusyT=0;   // Kyle OS Calendar busy times {at, blocks:[[startMin,endMin] since BASE]}; declared before events() can run
 const events=(n,d)=>(n==='Kyle'?kyleDay(d):((SCHED[n]||{})[isWeekend(d)?'we':'wd']||[])).map(([s,e,t])=>({s,e,t}))
-  .concat(extras.filter(x=>x.n===n&&x.day===d).map(x=>({s:x.s,e:x.e,t:x.t,away:x.away}))).sort((a,b)=>a.s-b.s);
+  .concat(extras.filter(x=>x.n===n&&x.day===d).map(x=>({s:x.s,e:x.e,t:x.t,away:x.away}))).concat(calBlocks(n,d)).sort((a,b)=>a.s-b.s);
 const RULES={anytime:{lbl:'Anytime',from:WAKE,to:SLEEP},business:{lbl:'Business hours',from:540,to:1020,weekdays:true},errand:{lbl:'Store hours',from:480,to:1200},daylight:{lbl:'Daylight',from:480,to:1110}};
 function guessRule(t){t=t.toLowerCase();
   if(/\b(rake|mow|leaves|yard|garden|shovel|wash the car)\b/.test(t))return'daylight';
@@ -1087,6 +1088,27 @@ async function cloudFetch(path,opts,retry=true){
 }
 const cloudRpc=(fn,args)=>cloudFetch(`/rest/v1/rpc/${fn}`,{method:'POST',body:JSON.stringify(args)});
 const cloudOp=(op,args)=>cloudFetch('/functions/v1/td-user',{method:'POST',body:JSON.stringify({op,...args})});
+/* Kyle OS Calendar: "Not now" lands in a real free gap. When the signed-in person has connected Google Calendar in the
+   calendar app, their busy times (times only, never titles) count as busy here, so findSlot, "this fits right now" and
+   "free until" all respect them. The swipe stays one gesture: busy times are fetched in the background and cached.
+   Without a connected calendar nothing changes. A failure here is silent and never signs anyone out. */
+function calBlocks(n,d){
+  if(mode!=='family'||!calBusy||n!==meKey())return[];
+  const out=[];for(const[s,e]of calBusy.blocks){const a=Math.max(s,d*DAY),b=Math.min(e,(d+1)*DAY);if(b>a)out.push({s:a-d*DAY,e:b-d*DAY,t:'Busy',cal:true})}
+  return out;
+}
+async function refreshCalBusy(){
+  clearTimeout(calBusyT);
+  if(mode!=='family'||!auth||!adultMe())return;
+  try{
+    const r=await fetch(cloudPath('/functions/v1/cal'),{method:'POST',headers:hdr(true),body:JSON.stringify({op:'freebusy'})});
+    const j=r.ok?await r.json():null;
+    if(j&&j.ok&&j.connected&&Array.isArray(j.busy)){
+      calBusy={at:Date.now(),blocks:j.busy.map(b=>[(Date.parse(b.start)-BASE.getTime())/60000,(Date.parse(b.end)-BASE.getTime())/60000]).filter(([a,b])=>isFinite(a)&&isFinite(b)&&b>a)};
+    }else if(j&&j.ok)calBusy=null;
+  }catch(e){}
+  if(mode==='family')calBusyT=setTimeout(refreshCalBusy,5*60e3);
+}
 async function signIn(email,password){
   const r=await fetch(cloudPath('/auth/v1/token?grant_type=password'),{method:'POST',headers:hdr(false),body:JSON.stringify({email,password})});
   const s=await r.json().catch(()=>({}));
@@ -1429,9 +1451,10 @@ function startFamily(){
   loadConnsCache();if(adultMe())loadConns().then(()=>{if(!busy)render()});else conns=[];   // who my doer is (for swipe-down)
   wakeCards();runDeals();setQaPlaceholder();render();renderLog();
   scheduleSync(0);                                                        // share what's here, fetch what's new
+  refreshCalBusy();                                                       // real busy times for "Not now" (if a calendar is connected)
   if(me.role==='parent'){syncProbe().then(sv=>{if(sv&&!busy)render()}).catch(()=>{}).finally(()=>schedulePoll(5000))}
 }
-function leaveToWelcome(){clearTimeout(pollT);clearTimeout(syncT);conns=null;newConn=null;me=null;household=null;labels={};people=DEMO_PEOPLE;enterMode('welcome');renderWelcome()}
+function leaveToWelcome(){clearTimeout(pollT);clearTimeout(syncT);clearTimeout(calBusyT);calBusy=null;conns=null;newConn=null;me=null;household=null;labels={};people=DEMO_PEOPLE;enterMode('welcome');renderWelcome()}
 async function boot(){
   if(!auth){enterMode('welcome');renderWelcome();return}
   try{const sv=await loadMe();if(sv)startFamily();else{enterMode('join');renderWelcome()}}
@@ -2238,8 +2261,11 @@ document.addEventListener('keydown',e=>{
   try{asked=localStorage.getItem(ASK_KEY)==='1'}catch(e){}
   async function register(){
     if(!token||mode!=='family'||!me||!auth)return;
-    const k=me.id+'|'+token;if(registeredFor===k)return;
-    try{const r=await cloudRpc('td_push_register',{p_token:token,p_platform:'android'});if(r&&r.ok)registeredFor=k}catch(e){}
+    const a=A(),b=a&&a.build?a.build():0;
+    if(!b&&!register.waited){register.waited=true;setTimeout(register,4000);return}   // the build number arrives a moment after launch
+    const k=me.id+'|'+token+'|'+b;if(registeredFor===k)return;
+    // checking in each launch also tells the family's server which app build this phone runs
+    try{const r=await cloudRpc('td_push_register',{p_token:token,p_platform:'android',...(b?{p_build:b,p_version:String(a.versionName()||'').slice(0,40)}:{})});if(r&&r.ok)registeredFor=k}catch(e){}
   }
   window.addEventListener('taskdeck:push-token',e=>{token=e.detail&&e.detail.token||null;register()});
   window.addEventListener('taskdeck:open-card',e=>{
